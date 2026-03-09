@@ -1,0 +1,15 @@
+{
+  "job_name": "bizkaia_naves",
+  "sources": [
+    "idealista.com",
+    "fotocasa.es",
+    "pisos.com",
+    "yaencontre.com"
+  ],
+  "filters": {
+    "province": "bizkaia",
+    "property_type": "nave"
+  },
+  "max_urls": 50,
+  "notes": "Job inicial para resolver seeds y preparar archivado por lotes en siguientes iteraciones."
+}

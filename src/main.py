@@ -1,0 +1,163 @@
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+from src.archiver import archive_url
+from src.archiver.index import list_snapshots
+from src.config import (
+    load_job_by_name,
+    load_jobs,
+    load_source_by_domain,
+    load_sources,
+    resolve_job_start_urls,
+)
+
+
+def _cmd_archive(args: argparse.Namespace) -> int:
+    result = archive_url(url=args.url, timeout=args.timeout)
+    print(f"status={result.status}")
+    print(f"snapshot_id={result.snapshot_id}")
+    print(f"run_id={result.run_id}")
+    print(f"meta={result.meta_path}")
+    return 0 if result.status in {"ok", "partial"} else 1
+
+
+def _cmd_list_snapshots(args: argparse.Namespace) -> int:
+    rows = list_snapshots(domain=args.domain, date=args.date, status=args.status)
+
+    if args.as_json:
+        print(json.dumps(rows, indent=2, ensure_ascii=False))
+        return 0
+
+    if not rows:
+        print("No snapshots found")
+        return 0
+
+    for row in rows:
+        print(
+            " | ".join(
+                [
+                    row.get("timestamp_utc", ""),
+                    row.get("status", ""),
+                    row.get("domain", ""),
+                    row.get("snapshot_id", ""),
+                    row.get("run_id", ""),
+                    row.get("snapshot_path", ""),
+                ]
+            )
+        )
+    return 0
+
+
+def _cmd_list_sources(args: argparse.Namespace) -> int:
+    sources = load_sources()
+    if args.as_json:
+        print(json.dumps(sources, indent=2, ensure_ascii=False))
+        return 0
+
+    for src in sources:
+        print(f"{src['domain']} | enabled={src['enabled']} | mode={src['mode']}")
+    return 0
+
+
+def _cmd_show_source(args: argparse.Namespace) -> int:
+    try:
+        source = load_source_by_domain(args.domain)
+    except KeyError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    print(json.dumps(source, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _cmd_list_jobs(args: argparse.Namespace) -> int:
+    jobs = load_jobs()
+    if args.as_json:
+        print(json.dumps(jobs, indent=2, ensure_ascii=False))
+        return 0
+
+    for job in jobs:
+        print(f"{job['job_name']} | max_urls={job['max_urls']} | sources={len(job['sources'])}")
+    return 0
+
+
+def _cmd_show_job(args: argparse.Namespace) -> int:
+    try:
+        job = load_job_by_name(args.job)
+    except KeyError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    resolved_urls = resolve_job_start_urls(args.job)
+    payload = {
+        **job,
+        "resolved_start_urls": resolved_urls,
+    }
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    return 0
+
+
+def _cmd_legacy(args: argparse.Namespace) -> int:
+    repo_root = Path(__file__).resolve().parents[1]
+    legacy_script = repo_root / "agent_naves_bizkaia_v14.py"
+    if not legacy_script.exists():
+        print(f"Legacy script not found: {legacy_script}", file=sys.stderr)
+        return 2
+
+    cmd = [sys.executable, str(legacy_script), *args.legacy_args]
+    completed = subprocess.run(cmd, cwd=repo_root)
+    return completed.returncode
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Scraper Inmo CLI")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    archive_parser = subparsers.add_parser("archive", help="Archive a single URL")
+    archive_parser.add_argument("--url", required=True, help="Target URL to archive")
+    archive_parser.add_argument("--timeout", type=int, default=20, help="HTTP timeout in seconds")
+    archive_parser.set_defaults(func=_cmd_archive)
+
+    list_parser = subparsers.add_parser("list-snapshots", help="List archived snapshots from global index")
+    list_parser.add_argument("--domain", help="Filter by domain")
+    list_parser.add_argument("--date", help="Filter by date YYYY-MM-DD")
+    list_parser.add_argument("--status", help="Filter by status (ok, partial, error)")
+    list_parser.add_argument("--json", dest="as_json", action="store_true", help="Output raw JSON")
+    list_parser.set_defaults(func=_cmd_list_snapshots)
+
+    list_sources_parser = subparsers.add_parser("list-sources", help="List configured sources")
+    list_sources_parser.add_argument("--json", dest="as_json", action="store_true", help="Output raw JSON")
+    list_sources_parser.set_defaults(func=_cmd_list_sources)
+
+    show_source_parser = subparsers.add_parser("show-source", help="Show source config by domain")
+    show_source_parser.add_argument("--domain", required=True, help="Source domain (e.g. pisos.com)")
+    show_source_parser.set_defaults(func=_cmd_show_source)
+
+    list_jobs_parser = subparsers.add_parser("list-jobs", help="List configured jobs")
+    list_jobs_parser.add_argument("--json", dest="as_json", action="store_true", help="Output raw JSON")
+    list_jobs_parser.set_defaults(func=_cmd_list_jobs)
+
+    show_job_parser = subparsers.add_parser("show-job", help="Show job config")
+    show_job_parser.add_argument("--job", required=True, help="Job name")
+    show_job_parser.set_defaults(func=_cmd_show_job)
+
+    legacy_parser = subparsers.add_parser("legacy", help="Run legacy baseline script")
+    legacy_parser.add_argument("legacy_args", nargs=argparse.REMAINDER, help="Args passed to legacy script")
+    legacy_parser.set_defaults(func=_cmd_legacy)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,13 @@
+{
+  "domain": "yaencontre.com",
+  "enabled": true,
+  "mode": "seed_only",
+  "start_urls": [
+    "https://www.yaencontre.com/alquiler/naves/bizkaia"
+  ],
+  "rate_limit_seconds": 2,
+  "login_allowed": false,
+  "archiver_enabled": true,
+  "parser_key": "generic_listing",
+  "notes": "Seed inicial; pendiente parser dedicado."
+}

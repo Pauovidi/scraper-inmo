@@ -1,0 +1,55 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+
+# Test and coverage
+.coverage
+.coverage.*
+htmlcov/
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.*
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+
+# Data outputs (keep folder structure)
+data/raw/*
+!data/raw/.gitkeep
+
+data/snapshots/*
+!data/snapshots/.gitkeep
+
+data/outputs/*
+!data/outputs/.gitkeep
+
+data/logs/*
+!data/logs/.gitkeep
+
+# Global index runtime file
+data/index/*
+!data/index/.gitkeep

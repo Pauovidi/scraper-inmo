@@ -1,0 +1,13 @@
+{
+  "domain": "fotocasa.es",
+  "enabled": true,
+  "mode": "seed_only",
+  "start_urls": [
+    "https://www.fotocasa.es/es/comprar/locales/bizkaia-provincia/todas-las-zonas/l"
+  ],
+  "rate_limit_seconds": 2,
+  "login_allowed": false,
+  "archiver_enabled": true,
+  "parser_key": "generic_listing",
+  "notes": "Configuración base para futuros parsers por portal."
+}

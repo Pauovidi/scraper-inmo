@@ -1,0 +1,13 @@
+{
+  "domain": "idealista.com",
+  "enabled": true,
+  "mode": "seed_only",
+  "start_urls": [
+    "https://www.idealista.com/alquiler-naves/bizkaia/"
+  ],
+  "rate_limit_seconds": 2,
+  "login_allowed": false,
+  "archiver_enabled": true,
+  "parser_key": "generic_listing",
+  "notes": "Fuente inicial para pruebas de archivado; sin parser específico aún."
+}
