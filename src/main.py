@@ -16,6 +16,11 @@ from src.config import (
     resolve_job_start_urls,
 )
 from src.jobs import list_job_runs, load_job_run_manifest, run_job
+from src.parsers import parse_job_run, parse_snapshot
+
+
+def _print_json(data: object) -> None:
+    print(json.dumps(data, indent=2, ensure_ascii=False))
 
 
 def _cmd_archive(args: argparse.Namespace) -> int:
@@ -43,15 +48,43 @@ def _cmd_run_job(args: argparse.Namespace) -> int:
         "partial_count": result.partial_count,
         "error_count": result.error_count,
     }
-    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    _print_json(summary)
     return 0 if result.error_count == 0 else 1
+
+
+def _cmd_parse_snapshot(args: argparse.Namespace) -> int:
+    try:
+        rec = parse_snapshot(args.path)
+    except Exception as exc:
+        print(f"parse-snapshot failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+    if args.as_json:
+        _print_json(rec)
+    else:
+        _print_json(rec)
+    return 0
+
+
+def _cmd_parse_job_run(args: argparse.Namespace) -> int:
+    try:
+        summary = parse_job_run(job_name=args.job, run_id=args.run_id)
+    except Exception as exc:
+        print(f"parse-job-run failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+    if args.as_json:
+        _print_json(summary)
+    else:
+        _print_json(summary)
+    return 0
 
 
 def _cmd_list_snapshots(args: argparse.Namespace) -> int:
     rows = list_snapshots(domain=args.domain, date=args.date, status=args.status)
 
     if args.as_json:
-        print(json.dumps(rows, indent=2, ensure_ascii=False))
+        _print_json(rows)
         return 0
 
     if not rows:
@@ -77,7 +110,7 @@ def _cmd_list_snapshots(args: argparse.Namespace) -> int:
 def _cmd_list_sources(args: argparse.Namespace) -> int:
     sources = load_sources()
     if args.as_json:
-        print(json.dumps(sources, indent=2, ensure_ascii=False))
+        _print_json(sources)
         return 0
 
     for src in sources:
@@ -92,14 +125,14 @@ def _cmd_show_source(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    print(json.dumps(source, indent=2, ensure_ascii=False))
+    _print_json(source)
     return 0
 
 
 def _cmd_list_jobs(args: argparse.Namespace) -> int:
     jobs = load_jobs()
     if args.as_json:
-        print(json.dumps(jobs, indent=2, ensure_ascii=False))
+        _print_json(jobs)
         return 0
 
     for job in jobs:
@@ -119,7 +152,7 @@ def _cmd_show_job(args: argparse.Namespace) -> int:
         **job,
         "resolved_start_urls": resolved_urls,
     }
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    _print_json(payload)
     return 0
 
 
@@ -127,7 +160,7 @@ def _cmd_list_job_runs(args: argparse.Namespace) -> int:
     rows = list_job_runs(job_name=args.job)
 
     if args.as_json:
-        print(json.dumps(rows, indent=2, ensure_ascii=False))
+        _print_json(rows)
         return 0
 
     if not rows:
@@ -157,7 +190,7 @@ def _cmd_show_job_run(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    print(json.dumps(manifest, indent=2, ensure_ascii=False))
+    _print_json(manifest)
     return 0
 
 
@@ -185,6 +218,17 @@ def build_parser() -> argparse.ArgumentParser:
     run_job_parser = subparsers.add_parser("run-job", help="Run batch archiving for a configured job")
     run_job_parser.add_argument("--job", required=True, help="Job name")
     run_job_parser.set_defaults(func=_cmd_run_job)
+
+    parse_snapshot_parser = subparsers.add_parser("parse-snapshot", help="Parse one archived snapshot")
+    parse_snapshot_parser.add_argument("--path", required=True, help="Snapshot path or meta.json path")
+    parse_snapshot_parser.add_argument("--json", dest="as_json", action="store_true", help="Output JSON")
+    parse_snapshot_parser.set_defaults(func=_cmd_parse_snapshot)
+
+    parse_job_run_parser = subparsers.add_parser("parse-job-run", help="Parse all snapshots in a job run manifest")
+    parse_job_run_parser.add_argument("--job", required=True, help="Job name")
+    parse_job_run_parser.add_argument("--run-id", required=True, help="Job run id")
+    parse_job_run_parser.add_argument("--json", dest="as_json", action="store_true", help="Output JSON")
+    parse_job_run_parser.set_defaults(func=_cmd_parse_job_run)
 
     list_parser = subparsers.add_parser("list-snapshots", help="List archived snapshots from global index")
     list_parser.add_argument("--domain", help="Filter by domain")

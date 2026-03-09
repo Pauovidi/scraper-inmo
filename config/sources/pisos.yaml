@@ -9,5 +9,6 @@
   "login_allowed": false,
   "archiver_enabled": true,
   "parser_key": "generic_listing",
-  "notes": "Source activa para pipeline de snapshots."
+  "notes": "Source activa para pipeline de snapshots.",
+  "timeout_seconds": 20
 }

@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from src.jobs.index import list_job_runs, load_job_run_manifest
@@ -31,6 +32,7 @@ class JobRunnerTests(unittest.TestCase):
                         "mode": "seed_only",
                         "start_urls": [file_url],
                         "rate_limit_seconds": 0,
+                        "timeout_seconds": 12,
                         "login_allowed": False,
                         "archiver_enabled": True,
                         "parser_key": "generic",
@@ -115,6 +117,7 @@ class JobRunnerTests(unittest.TestCase):
                     snapshot_index_file=snap_index,
                     manifest_root_dir=manifest_root,
                     job_runs_index_file=job_runs_index,
+                    sleep_fn=lambda _: None,
                 )
 
             self.assertEqual(result.total_urls, 1)
@@ -139,6 +142,67 @@ class JobRunnerTests(unittest.TestCase):
 
             loaded_manifest = load_job_run_manifest("job_test", result.run_id, index_file=job_runs_index)
             self.assertEqual(loaded_manifest["run_id"], result.run_id)
+
+    def test_run_job_uses_timeout_seconds_from_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            cfg_sources = tmp_path / "sources"
+            cfg_jobs = tmp_path / "jobs"
+            cfg_sources.mkdir(parents=True)
+            cfg_jobs.mkdir(parents=True)
+
+            fixture = tmp_path / "seed.html"
+            fixture.write_text("<html><body><h1>Seed</h1></body></html>", encoding="utf-8")
+            file_url = fixture.as_uri()
+
+            (cfg_sources / "a.yaml").write_text(
+                json.dumps(
+                    {
+                        "domain": "a.test",
+                        "enabled": True,
+                        "mode": "seed_only",
+                        "start_urls": [file_url],
+                        "rate_limit_seconds": 0,
+                        "timeout_seconds": 7,
+                        "login_allowed": False,
+                        "archiver_enabled": True,
+                        "parser_key": "generic",
+                        "notes": "A",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (cfg_jobs / "job.yaml").write_text(
+                json.dumps(
+                    {
+                        "job_name": "job_timeout",
+                        "sources": ["a.test"],
+                        "filters": {},
+                        "max_urls": 10,
+                        "notes": "Timeout test",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            captured: list[int] = []
+
+            def fake_archive_fn(*, url: str, timeout: int, output_base_dir=None, index_file=None):
+                captured.append(timeout)
+                return SimpleNamespace(status="ok", output_dir=tmp_path / "snapshots" / "x")
+
+            with patch("src.config.loader.sources_dir", return_value=cfg_sources), patch(
+                "src.config.loader.jobs_dir", return_value=cfg_jobs
+            ):
+                run_job(
+                    "job_timeout",
+                    archive_fn=fake_archive_fn,
+                    manifest_root_dir=tmp_path / "job_runs",
+                    job_runs_index_file=tmp_path / "index" / "job_runs_index.jsonl",
+                    sleep_fn=lambda _: None,
+                )
+
+            self.assertEqual(captured, [7])
 
 
 if __name__ == "__main__":

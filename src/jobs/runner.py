@@ -66,12 +66,13 @@ def run_job(
         url = item["url"]
         source_domain = item["source_domain"]
         rate_limit = float(item.get("rate_limit_seconds", 0) or 0)
+        timeout_seconds = int(item.get("timeout_seconds", 20) or 20)
 
         status = "error"
         try:
             result = archive_fn(
                 url=url,
-                timeout=20,
+                timeout=timeout_seconds,
                 output_base_dir=archive_output_base_dir,
                 index_file=snapshot_index_file,
             )
@@ -99,6 +100,8 @@ def run_job(
                 "url": url,
                 "source_domain": source_domain,
                 "status": status,
+                "timeout_seconds": timeout_seconds,
+                "rate_limit_seconds": rate_limit,
             }
         )
 
@@ -152,3 +155,4 @@ def run_job(
         partial_count=partial_count,
         error_count=error_count,
     )
+

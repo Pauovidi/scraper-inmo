@@ -9,5 +9,6 @@
   "login_allowed": false,
   "archiver_enabled": true,
   "parser_key": "generic_listing",
-  "notes": "Fuente inicial para pruebas de archivado; sin parser específico aún."
+  "notes": "Fuente inicial para pruebas de archivado; sin parser específico aún.",
+  "timeout_seconds": 20
 }

@@ -74,6 +74,9 @@ def _validate_source(data: dict[str, Any], path: Path) -> None:
     if not isinstance(data["rate_limit_seconds"], (int, float)):
         raise ValueError(f"rate_limit_seconds must be numeric in {path.name}")
 
+    if "timeout_seconds" in data and not isinstance(data["timeout_seconds"], (int, float)):
+        raise ValueError(f"timeout_seconds must be numeric in {path.name}")
+
 
 def _validate_job(data: dict[str, Any], path: Path) -> None:
     _validate_required_fields(data, REQUIRED_JOB_FIELDS, path)
@@ -186,6 +189,7 @@ def resolve_job_plan(job_name: str) -> dict[str, Any]:
                     "url": url,
                     "source_domain": domain,
                     "rate_limit_seconds": rate_limit,
+                    "timeout_seconds": float(src.get("timeout_seconds", 20) or 20),
                 }
             )
 
@@ -200,3 +204,4 @@ def resolve_job_plan(job_name: str) -> dict[str, Any]:
         "url_items": url_items,
         "duplicate_start_urls_skipped": duplicate_count,
     }
+

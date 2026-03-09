@@ -57,3 +57,7 @@ data/index/*
 # Job runs runtime files
 data/job_runs/*
 !data/job_runs/.gitkeep
+
+# Parsed outputs runtime files
+data/parsed/*
+!data/parsed/.gitkeep
