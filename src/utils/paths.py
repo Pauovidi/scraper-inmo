@@ -17,3 +17,11 @@ def logs_dir() -> Path:
 
 def snapshots_dir() -> Path:
     return data_dir() / "snapshots"
+
+
+def index_dir() -> Path:
+    return data_dir() / "index"
+
+
+def job_runs_dir() -> Path:
+    return data_dir() / "job_runs"

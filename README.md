@@ -1,15 +1,15 @@
 # Scraper Inmobiliario Bizkaia
 
-Proyecto Python incremental con baseline legacy preservado y capas nuevas para archivado, índice global y configuración por fuentes/jobs.
+Proyecto Python incremental con baseline legacy preservado y capas modulares para archivado, configuración y ejecución por jobs.
 
 ## Estado actual
 - Baseline legacy intacto (`agent_naves_bizkaia_v14.py`).
-- Archiver v1.1 con `markdown.new` + fallback local.
-- Índice global JSONL con hashes y deduplicación básica.
-- SnapshotBridge para cargar snapshot desde disco.
-- Capa de configuración YAML para fuentes y jobs.
+- Archiver con `markdown.new` + fallback local.
+- Índice global de snapshots JSONL.
+- Configuración por fuente y por job (`config/sources`, `config/jobs`).
+- Runner batch de jobs con manifiesto e índice de ejecuciones.
 
-## Estructura de configuración
+## Configuración
 ```text
 config/
 |-- sources/
@@ -21,8 +21,7 @@ config/
     `-- bizkaia_naves.yaml
 ```
 
-## Formato source YAML
-Campos obligatorios:
+### Source YAML (campos)
 - `domain`
 - `enabled`
 - `mode`
@@ -33,61 +32,98 @@ Campos obligatorios:
 - `parser_key`
 - `notes`
 
-## Formato job YAML
-Campos obligatorios:
+### Job YAML (campos)
 - `job_name`
 - `sources`
 - `filters`
 - `max_urls`
 - `notes`
 
-## Resolución de seeds por job
-- El loader cruza `job.sources` con `config/sources/*.yaml`.
-- Solo usa fuentes `enabled=true` y `archiver_enabled=true`.
-- Devuelve `start_urls` deduplicadas.
-
-## Snapshot path con histórico real (hotfix)
-Antes se sobrescribía la misma ruta para URL+día.
-Ahora cada ejecución genera `run_id` único y la ruta queda:
+## Archivado y snapshots
+Cada ejecución de `archive` guarda en:
 
 `data/snapshots/{domain}/{yyyy-mm-dd}/{slug_or_hash}/{run_id}/`
 
-- `snapshot_id` sigue siendo estable por URL.
-- `run_id` identifica cada ejecución concreta.
-- `meta.json` e índice JSONL incluyen ambos (`snapshot_id`, `run_id`).
+- `snapshot_id`: estable por URL.
+- `run_id`: único por ejecución.
+- evita sobreescritura y conserva histórico real.
 
-## Índice global
+## Runner de jobs
+Comando:
+```powershell
+python -m src.main run-job --job bizkaia_naves
+```
+
+Flujo:
+1. Carga job YAML.
+2. Resuelve fuentes asociadas.
+3. Excluye fuentes `enabled=false` o `archiver_enabled=false`.
+4. Deduplica `start_urls` entre fuentes.
+5. Aplica `max_urls` del job.
+6. Archiva cada URL con el archiver existente.
+7. Respeta `rate_limit_seconds` de la fuente de cada URL.
+8. Continúa aunque falle alguna URL.
+
+### Manifest por ejecución
+Ruta:
+`data/job_runs/{job_name}/{run_id}/manifest.json`
+
+Campos principales:
+- `job_name`
+- `run_id`
+- `timestamp_utc_start`
+- `timestamp_utc_end`
+- `sources_resolved` (included/excluded)
+- `start_urls`
+- `duplicate_start_urls_skipped`
+- `total_urls`
+- `ok_count`
+- `partial_count`
+- `error_count`
+- `snapshot_paths`
+- `errors_summary`
+
+### Índice de ejecuciones de jobs
 Archivo:
-- `data/index/snapshots_index.jsonl`
+`data/index/job_runs_index.jsonl`
 
-Cada entrada guarda, entre otros:
-- `snapshot_id`, `run_id`
-- `url_original`, `url_final`, `domain`
-- `timestamp_utc`, `date`, `status`
-- `markdown_source`, `html_source`
-- `snapshot_path`, `elapsed_ms`
-- `html_hash`, `markdown_hash`, `content_hash_preferred`
-- `is_duplicate_content`, `match_reason`
+Una línea por run con:
+- `job_name`
+- `run_id`
+- `timestamp_utc_start`
+- `timestamp_utc_end`
+- `total_urls`
+- `ok_count`
+- `partial_count`
+- `error_count`
+- `manifest_path`
 
 ## CLI
-### Archivar
+### Archivo único
 ```powershell
 python -m src.main archive --url "https://example.com"
 ```
 
-### Listar snapshots
+### Snapshots
 ```powershell
 python -m src.main list-snapshots
-python -m src.main list-snapshots --domain local-file --status ok
-python -m src.main list-snapshots --date 2026-03-09 --json
+python -m src.main list-snapshots --domain local-file --status ok --json
 ```
 
-### Configuración
+### Config
 ```powershell
 python -m src.main list-sources
 python -m src.main show-source --domain pisos.com
 python -m src.main list-jobs
 python -m src.main show-job --job bizkaia_naves
+```
+
+### Jobs batch
+```powershell
+python -m src.main run-job --job bizkaia_naves
+python -m src.main list-job-runs
+python -m src.main list-job-runs --job bizkaia_naves
+python -m src.main show-job-run --job bizkaia_naves --run-id <run_id>
 ```
 
 ### Legacy
@@ -101,6 +137,6 @@ python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
 ## Limitaciones actuales
-- Sin parsers por portal todavía (solo bridge genérico).
-- Dedupe básica por URL/día/hash, no semántica avanzada.
-- `markdown.new` depende de red externa; si falla, fallback local mantiene robustez.
+- Sin parsers específicos por portal todavía.
+- Dedupe de snapshots básica por URL+día+hash.
+- `markdown.new` depende de disponibilidad de red.

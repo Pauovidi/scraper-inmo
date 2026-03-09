@@ -4,11 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.utils.paths import data_dir, repo_root
+from src.utils.paths import index_dir, repo_root
 
-
-def index_dir() -> Path:
-    return data_dir() / "index"
 
 
 def snapshots_index_file() -> Path:
@@ -96,3 +93,4 @@ def load_snapshot_meta(snapshot_path: str | Path) -> dict[str, Any]:
     if not meta_path.exists():
         raise FileNotFoundError(f"meta.json not found at: {meta_path}")
     return json.loads(meta_path.read_text(encoding="utf-8"))
+

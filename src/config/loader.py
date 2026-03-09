@@ -71,6 +71,9 @@ def _validate_source(data: dict[str, Any], path: Path) -> None:
     if not isinstance(data["start_urls"], list) or not data["start_urls"]:
         raise ValueError(f"start_urls must be a non-empty list in {path.name}")
 
+    if not isinstance(data["rate_limit_seconds"], (int, float)):
+        raise ValueError(f"rate_limit_seconds must be numeric in {path.name}")
+
 
 def _validate_job(data: dict[str, Any], path: Path) -> None:
     _validate_required_fields(data, REQUIRED_JOB_FIELDS, path)
@@ -111,19 +114,41 @@ def load_job_by_name(job_name: str) -> dict[str, Any]:
     raise KeyError(f"Job not found: {job_name}")
 
 
-def resolve_job_start_urls(job_name: str) -> list[str]:
+def resolve_job_sources(job_name: str) -> dict[str, Any]:
     job = load_job_by_name(job_name)
     sources_by_domain = {src["domain"]: src for src in load_sources()}
 
-    start_urls: list[str] = []
+    included_sources: list[dict[str, Any]] = []
+    excluded_sources: list[dict[str, Any]] = []
+
     for domain in job["sources"]:
         src = sources_by_domain.get(domain)
         if not src:
+            excluded_sources.append({"domain": domain, "reason": "missing_source"})
             continue
+
         if not src.get("enabled", False):
+            excluded_sources.append({"domain": domain, "reason": "disabled"})
             continue
+
         if not src.get("archiver_enabled", False):
+            excluded_sources.append({"domain": domain, "reason": "archiver_disabled"})
             continue
+
+        included_sources.append(src)
+
+    return {
+        "job": job,
+        "included_sources": included_sources,
+        "excluded_sources": excluded_sources,
+    }
+
+
+def resolve_job_start_urls(job_name: str) -> list[str]:
+    resolved = resolve_job_sources(job_name)
+
+    start_urls: list[str] = []
+    for src in resolved["included_sources"]:
         start_urls.extend(src.get("start_urls", []))
 
     seen: set[str] = set()
@@ -134,4 +159,44 @@ def resolve_job_start_urls(job_name: str) -> list[str]:
         seen.add(url)
         deduped.append(url)
 
+    max_urls = int(resolved["job"].get("max_urls", 0) or 0)
+    if max_urls > 0:
+        return deduped[:max_urls]
     return deduped
+
+
+def resolve_job_plan(job_name: str) -> dict[str, Any]:
+    resolved = resolve_job_sources(job_name)
+    job = resolved["job"]
+
+    url_items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    duplicate_count = 0
+
+    for src in resolved["included_sources"]:
+        domain = src["domain"]
+        rate_limit = float(src.get("rate_limit_seconds", 0))
+        for url in src.get("start_urls", []):
+            if url in seen:
+                duplicate_count += 1
+                continue
+            seen.add(url)
+            url_items.append(
+                {
+                    "url": url,
+                    "source_domain": domain,
+                    "rate_limit_seconds": rate_limit,
+                }
+            )
+
+    max_urls = int(job.get("max_urls", 0) or 0)
+    if max_urls > 0:
+        url_items = url_items[:max_urls]
+
+    return {
+        "job": job,
+        "included_sources": resolved["included_sources"],
+        "excluded_sources": resolved["excluded_sources"],
+        "url_items": url_items,
+        "duplicate_start_urls_skipped": duplicate_count,
+    }

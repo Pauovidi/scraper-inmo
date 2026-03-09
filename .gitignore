@@ -53,3 +53,7 @@ data/logs/*
 # Global index runtime file
 data/index/*
 !data/index/.gitkeep
+
+# Job runs runtime files
+data/job_runs/*
+!data/job_runs/.gitkeep

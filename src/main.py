@@ -15,6 +15,7 @@ from src.config import (
     load_sources,
     resolve_job_start_urls,
 )
+from src.jobs import list_job_runs, load_job_run_manifest, run_job
 
 
 def _cmd_archive(args: argparse.Namespace) -> int:
@@ -24,6 +25,26 @@ def _cmd_archive(args: argparse.Namespace) -> int:
     print(f"run_id={result.run_id}")
     print(f"meta={result.meta_path}")
     return 0 if result.status in {"ok", "partial"} else 1
+
+
+def _cmd_run_job(args: argparse.Namespace) -> int:
+    try:
+        result = run_job(job_name=args.job)
+    except KeyError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    summary = {
+        "job_name": result.job_name,
+        "run_id": result.run_id,
+        "manifest_path": str(result.manifest_path),
+        "total_urls": result.total_urls,
+        "ok_count": result.ok_count,
+        "partial_count": result.partial_count,
+        "error_count": result.error_count,
+    }
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    return 0 if result.error_count == 0 else 1
 
 
 def _cmd_list_snapshots(args: argparse.Namespace) -> int:
@@ -102,6 +123,44 @@ def _cmd_show_job(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_list_job_runs(args: argparse.Namespace) -> int:
+    rows = list_job_runs(job_name=args.job)
+
+    if args.as_json:
+        print(json.dumps(rows, indent=2, ensure_ascii=False))
+        return 0
+
+    if not rows:
+        print("No job runs found")
+        return 0
+
+    for row in rows:
+        print(
+            " | ".join(
+                [
+                    row.get("job_name", ""),
+                    row.get("run_id", ""),
+                    row.get("timestamp_utc_start", ""),
+                    f"ok={row.get('ok_count', 0)}",
+                    f"partial={row.get('partial_count', 0)}",
+                    f"error={row.get('error_count', 0)}",
+                ]
+            )
+        )
+    return 0
+
+
+def _cmd_show_job_run(args: argparse.Namespace) -> int:
+    try:
+        manifest = load_job_run_manifest(job_name=args.job, run_id=args.run_id)
+    except (KeyError, FileNotFoundError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    print(json.dumps(manifest, indent=2, ensure_ascii=False))
+    return 0
+
+
 def _cmd_legacy(args: argparse.Namespace) -> int:
     repo_root = Path(__file__).resolve().parents[1]
     legacy_script = repo_root / "agent_naves_bizkaia_v14.py"
@@ -122,6 +181,10 @@ def build_parser() -> argparse.ArgumentParser:
     archive_parser.add_argument("--url", required=True, help="Target URL to archive")
     archive_parser.add_argument("--timeout", type=int, default=20, help="HTTP timeout in seconds")
     archive_parser.set_defaults(func=_cmd_archive)
+
+    run_job_parser = subparsers.add_parser("run-job", help="Run batch archiving for a configured job")
+    run_job_parser.add_argument("--job", required=True, help="Job name")
+    run_job_parser.set_defaults(func=_cmd_run_job)
 
     list_parser = subparsers.add_parser("list-snapshots", help="List archived snapshots from global index")
     list_parser.add_argument("--domain", help="Filter by domain")
@@ -145,6 +208,16 @@ def build_parser() -> argparse.ArgumentParser:
     show_job_parser = subparsers.add_parser("show-job", help="Show job config")
     show_job_parser.add_argument("--job", required=True, help="Job name")
     show_job_parser.set_defaults(func=_cmd_show_job)
+
+    list_job_runs_parser = subparsers.add_parser("list-job-runs", help="List job batch executions")
+    list_job_runs_parser.add_argument("--job", help="Filter by job name")
+    list_job_runs_parser.add_argument("--json", dest="as_json", action="store_true", help="Output raw JSON")
+    list_job_runs_parser.set_defaults(func=_cmd_list_job_runs)
+
+    show_job_run_parser = subparsers.add_parser("show-job-run", help="Show job run manifest")
+    show_job_run_parser.add_argument("--job", required=True, help="Job name")
+    show_job_run_parser.add_argument("--run-id", required=True, help="Run id")
+    show_job_run_parser.set_defaults(func=_cmd_show_job_run)
 
     legacy_parser = subparsers.add_parser("legacy", help="Run legacy baseline script")
     legacy_parser.add_argument("legacy_args", nargs=argparse.REMAINDER, help="Args passed to legacy script")
