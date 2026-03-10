@@ -27,6 +27,10 @@ def job_runs_dir() -> Path:
     return data_dir() / "job_runs"
 
 
+def pipeline_runs_dir() -> Path:
+    return data_dir() / "pipeline_runs"
+
+
 def parsed_dir() -> Path:
     return data_dir() / "parsed"
 

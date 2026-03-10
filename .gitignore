@@ -71,3 +71,8 @@ data/discovered/*
 data/exports/*
 !data/exports/.gitkeep
 
+
+# Pipeline run runtime files
+data/pipeline_runs/*
+!data/pipeline_runs/.gitkeep
+

@@ -18,6 +18,7 @@ from src.config import (
 from src.discovery import archive_discovered, discover_job_run
 from src.jobs import list_job_runs, load_job_run_manifest, run_job
 from src.parsers import parse_discovered, parse_job_run, parse_snapshot
+from src.pipeline import run_job_full
 
 
 def _print_json(data: object) -> None:
@@ -51,6 +52,23 @@ def _cmd_run_job(args: argparse.Namespace) -> int:
     }
     _print_json(summary)
     return 0 if result.error_count == 0 else 1
+
+
+def _cmd_run_job_full(args: argparse.Namespace) -> int:
+    try:
+        result = run_job_full(
+            job_name=args.job,
+            resume=args.resume,
+            force_discovery=args.force_discovery,
+            force_archive_discovered=args.force_archive_discovered,
+            force_parse=args.force_parse,
+        )
+    except Exception as exc:
+        print(f"run-job-full failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+    _print_json(result.to_dict())
+    return 0 if result.status in {"completed", "partial"} else 1
 
 
 def _cmd_discover_job_run(args: argparse.Namespace) -> int:
@@ -246,6 +264,14 @@ def build_parser() -> argparse.ArgumentParser:
     run_job_parser = subparsers.add_parser("run-job", help="Run batch archiving for a configured job")
     run_job_parser.add_argument("--job", required=True, help="Job name")
     run_job_parser.set_defaults(func=_cmd_run_job)
+
+    run_job_full_parser = subparsers.add_parser("run-job-full", help="Run full pipeline for a configured job")
+    run_job_full_parser.add_argument("--job", required=True, help="Job name")
+    run_job_full_parser.add_argument("--resume", action="store_true", help="Resume last pipeline run for this job")
+    run_job_full_parser.add_argument("--force-discovery", action="store_true", help="Force re-run discover-job-run")
+    run_job_full_parser.add_argument("--force-archive-discovered", action="store_true", help="Force re-run archive-discovered")
+    run_job_full_parser.add_argument("--force-parse", action="store_true", help="Force re-run parse-discovered")
+    run_job_full_parser.set_defaults(func=_cmd_run_job_full)
 
     discover_job_parser = subparsers.add_parser("discover-job-run", help="Discover candidate detail URLs from a job run")
     discover_job_parser.add_argument("--job", required=True, help="Job name")
