@@ -29,3 +29,7 @@ def job_runs_dir() -> Path:
 
 def parsed_dir() -> Path:
     return data_dir() / "parsed"
+
+
+def discovered_dir() -> Path:
+    return data_dir() / "discovered"

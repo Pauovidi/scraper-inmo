@@ -61,3 +61,8 @@ data/job_runs/*
 # Parsed outputs runtime files
 data/parsed/*
 !data/parsed/.gitkeep
+
+# Discovery outputs runtime files
+data/discovered/*
+!data/discovered/.gitkeep
+

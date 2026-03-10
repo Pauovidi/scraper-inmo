@@ -15,6 +15,7 @@ from src.config import (
     load_sources,
     resolve_job_start_urls,
 )
+from src.discovery import archive_discovered, discover_job_run
 from src.jobs import list_job_runs, load_job_run_manifest, run_job
 from src.parsers import parse_job_run, parse_snapshot
 
@@ -52,6 +53,28 @@ def _cmd_run_job(args: argparse.Namespace) -> int:
     return 0 if result.error_count == 0 else 1
 
 
+def _cmd_discover_job_run(args: argparse.Namespace) -> int:
+    try:
+        summary = discover_job_run(job_name=args.job, run_id=args.run_id)
+    except Exception as exc:
+        print(f"discover-job-run failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+    _print_json(summary)
+    return 0
+
+
+def _cmd_archive_discovered(args: argparse.Namespace) -> int:
+    try:
+        summary = archive_discovered(job_name=args.job, run_id=args.run_id)
+    except Exception as exc:
+        print(f"archive-discovered failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+    _print_json(summary)
+    return 0 if summary.get("error_count", 0) == 0 else 1
+
+
 def _cmd_parse_snapshot(args: argparse.Namespace) -> int:
     try:
         rec = parse_snapshot(args.path)
@@ -59,10 +82,7 @@ def _cmd_parse_snapshot(args: argparse.Namespace) -> int:
         print(f"parse-snapshot failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 
-    if args.as_json:
-        _print_json(rec)
-    else:
-        _print_json(rec)
+    _print_json(rec)
     return 0
 
 
@@ -73,10 +93,7 @@ def _cmd_parse_job_run(args: argparse.Namespace) -> int:
         print(f"parse-job-run failed: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
 
-    if args.as_json:
-        _print_json(summary)
-    else:
-        _print_json(summary)
+    _print_json(summary)
     return 0
 
 
@@ -218,6 +235,18 @@ def build_parser() -> argparse.ArgumentParser:
     run_job_parser = subparsers.add_parser("run-job", help="Run batch archiving for a configured job")
     run_job_parser.add_argument("--job", required=True, help="Job name")
     run_job_parser.set_defaults(func=_cmd_run_job)
+
+    discover_job_parser = subparsers.add_parser("discover-job-run", help="Discover candidate detail URLs from a job run")
+    discover_job_parser.add_argument("--job", required=True, help="Job name")
+    discover_job_parser.add_argument("--run-id", required=True, help="Job run id")
+    discover_job_parser.add_argument("--json", dest="as_json", action="store_true", help="Output JSON")
+    discover_job_parser.set_defaults(func=_cmd_discover_job_run)
+
+    archive_discovered_parser = subparsers.add_parser("archive-discovered", help="Archive discovered URLs of a job run")
+    archive_discovered_parser.add_argument("--job", required=True, help="Job name")
+    archive_discovered_parser.add_argument("--run-id", required=True, help="Job run id")
+    archive_discovered_parser.add_argument("--json", dest="as_json", action="store_true", help="Output JSON")
+    archive_discovered_parser.set_defaults(func=_cmd_archive_discovered)
 
     parse_snapshot_parser = subparsers.add_parser("parse-snapshot", help="Parse one archived snapshot")
     parse_snapshot_parser.add_argument("--path", required=True, help="Snapshot path or meta.json path")

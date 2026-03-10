@@ -87,12 +87,26 @@ def _description(markdown: str | None, html: str | None) -> str | None:
     return cleaned[:1200]
 
 
-def _page_kind(url: str, links_count: int) -> str:
+def _page_kind(url: str, links_count: int, has_price: bool, has_surface: bool, title: str | None) -> str:
     low = url.lower()
-    if any(token in low for token in ["detalle", "ficha", "inmueble", "listing-"]):
+    title_low = (title or "").lower()
+
+    detail_tokens = ["/inmueble/", "/ficha", "/detalle", "id-"]
+    listing_tokens = ["/buscar", "/alquiler", "/venta", "resultados", "/naves"]
+
+    if any(token in low for token in detail_tokens):
         return "detail"
-    if links_count >= 20 or any(token in low for token in ["buscar", "alquiler", "venta", "naves"]):
+
+    if any(token in low for token in listing_tokens) and links_count >= 5:
         return "listing"
+
+    # Detail pages usually show structured facts and fewer outbound links.
+    if (has_price and has_surface and links_count <= 15) or "nave" in title_low and has_price:
+        return "detail"
+
+    if links_count >= 20:
+        return "listing"
+
     return "unknown"
 
 
@@ -140,7 +154,13 @@ def parse_generic_snapshot(bundle: SnapshotBundle, parser_key: str = "generic") 
         snapshot_path=meta.get("snapshot_path", str(bundle.snapshot_path)),
         url_original=meta.get("url_original", ""),
         url_final=meta.get("url_final", ""),
-        page_kind=_page_kind(meta.get("url_final", ""), len(links)),
+        page_kind=_page_kind(
+            meta.get("url_final", ""),
+            len(links),
+            bool(price_text),
+            bool(surface_text),
+            title,
+        ),
         title=title,
         price_text=price_text,
         location_text=location_text,
@@ -153,3 +173,4 @@ def parse_generic_snapshot(bundle: SnapshotBundle, parser_key: str = "generic") 
         parse_errors=errors,
         confidence_score=round(_confidence(fields_present), 2),
     )
+

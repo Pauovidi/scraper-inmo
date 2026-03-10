@@ -1,14 +1,15 @@
 # Scraper Inmobiliario Bizkaia
 
-Proyecto Python incremental con baseline legacy preservado y pipeline modular de archivado, jobs y parsing normalizado.
+Proyecto Python incremental con baseline legacy preservado y pipeline modular de archivado, jobs, parsing y discovery.
 
 ## Estado actual
 - Baseline legacy intacto (`agent_naves_bizkaia_v14.py`).
-- Archiver con `markdown.new` + fallback local.
-- Índice global de snapshots JSONL.
+- Archiver con estrategia explícita `markdown.new` + fallback local.
+- Índice global de snapshots JSONL y deduplicación básica por hash.
 - Configuración por fuente y job (`config/sources`, `config/jobs`).
 - Runner batch de jobs con manifiesto por ejecución.
-- Capa de parsing normalizado sobre snapshots archivados.
+- Parsing normalizado sobre snapshots archivados.
+- Discovery de enlaces candidatos a fichas (`detail`) desde snapshots de `listing`.
 
 ## Configuración
 ```text
@@ -46,9 +47,9 @@ Ruta de snapshot:
 
 `data/snapshots/{domain}/{yyyy-mm-dd}/{slug_or_hash}/{run_id}/`
 
-- `snapshot_id` estable por URL
-- `run_id` único por ejecución
-- histórico real sin sobrescritura
+- `snapshot_id` estable por URL.
+- `run_id` único por ejecución.
+- Histórico real sin sobrescritura.
 
 ## Runner de jobs
 ```powershell
@@ -56,13 +57,13 @@ python -m src.main run-job --job bizkaia_naves
 ```
 
 Comportamiento:
-- resuelve sources del job
-- excluye `enabled=false` o `archiver_enabled=false`
-- deduplica `start_urls`
-- aplica `max_urls`
-- archiva cada URL
-- respeta `rate_limit_seconds` y `timeout_seconds` por source
-- continúa en errores
+- Resuelve sources del job.
+- Excluye `enabled=false` o `archiver_enabled=false`.
+- Deduplica `start_urls`.
+- Aplica `max_urls`.
+- Archiva cada URL.
+- Respeta `rate_limit_seconds` y `timeout_seconds` por source.
+- Continúa si una URL falla.
 
 ### Manifest de job run
 `data/job_runs/{job_name}/{run_id}/manifest.json`
@@ -79,7 +80,7 @@ Campos principales:
 `data/index/job_runs_index.jsonl` (1 línea por ejecución)
 
 ## Parsing normalizado
-### Schema base de salida
+### Schema base
 Cada registro parseado incluye:
 - `parser_key`
 - `source_domain`
@@ -102,8 +103,8 @@ Cada registro parseado incluye:
 - `confidence_score`
 
 ### Registry de parsers
-- toma `parser_key` desde `config/sources/*.yaml`
-- si no hay parser específico disponible, fallback automático al parser genérico
+- Usa `parser_key` desde `config/sources/*.yaml`.
+- Si no hay parser específico disponible, fallback automático al parser genérico.
 
 ### Comandos de parsing
 ```powershell
@@ -119,8 +120,67 @@ python -m src.main parse-job-run --job bizkaia_naves --run-id <run_id> --json
 Índice de parse runs:
 - `data/index/parse_runs_index.jsonl`
 
+## Discovery de enlaces
+### Objetivo
+Detectar URLs candidatas a páginas `detail` a partir de snapshots de páginas `listing` usando HTML/Markdown archivados.
+
+### Heurística listing/detail
+- `detail`: patrones de URL de ficha (por ejemplo `/inmueble/`, `/ficha`, `/detalle`) y señales de contenido estructurado.
+- `listing`: patrones de búsqueda/listado y volumen de enlaces salientes.
+- `unknown`: cuando no hay señales suficientes.
+
+### Reglas por parser/source
+Discovery aplica:
+- filtro base de enlaces no útiles (`login`, `contacto`, `favoritos`, `share`, etc.)
+- normalización de URLs relativas a absolutas
+- deduplicación
+- filtro por dominio
+- reglas por `parser_key`
+
+Regla específica inicial implementada:
+- `idealista_listing` (patrones include/exclude para discovery de detail URLs)
+
+Fallback siempre disponible:
+- `generic`
+
+### Comandos de discovery
+```powershell
+python -m src.main discover-job-run --job bizkaia_naves --run-id <run_id> --json
+python -m src.main archive-discovered --job bizkaia_naves --run-id <run_id> --json
+```
+
+`discover-job-run`:
+- Carga el `manifest.json` del job run.
+- Lee snapshots referenciados.
+- Intenta descubrir candidate detail URLs.
+- Persiste resultados.
+
+`archive-discovered`:
+- Lee `discovered_urls.jsonl`.
+- Archiva cada URL descubierta con el archiver actual.
+- Guarda un resumen de archivado.
+
+### Outputs de discovery
+- `data/discovered/job_runs/{job_name}/{run_id}/discovered_urls.jsonl`
+- `data/discovered/job_runs/{job_name}/{run_id}/summary.json`
+- `data/discovered/job_runs/{job_name}/{run_id}/archive_summary.json` (si se ejecuta `archive-discovered`)
+- `data/index/discovery_runs_index.jsonl`
+
+Formato base de `discovered_urls.jsonl` (1 línea = 1 URL):
+- `job_name`
+- `run_id`
+- `source_domain`
+- `parser_key`
+- `parent_snapshot_id`
+- `parent_run_id`
+- `parent_snapshot_path`
+- `page_kind`
+- `discovered_url`
+- `discovered_at`
+
 ## CLI adicional
 ```powershell
+python -m src.main archive --url "https://example.com"
 python -m src.main list-snapshots
 python -m src.main list-sources
 python -m src.main show-source --domain pisos.com
@@ -136,6 +196,7 @@ python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
 ## Limitaciones actuales
-- Parser genérico heurístico, sin reglas específicas por portal.
-- Extracción de `price/location/surface/rooms` basada en patrones simples.
-- `markdown.new` y scraping HTTP dependen de red disponible del entorno.
+- Discovery basado en reglas/heurísticas; no hay crawling profundo ni paginación avanzada.
+- Solo hay primera regla específica por portal (`idealista_listing`), el resto usa fallback genérico.
+- Parser genérico todavía heurístico (sin parser completo por portal).
+- `markdown.new` y scraping HTTP dependen de disponibilidad de red del entorno.
