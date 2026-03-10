@@ -8,7 +8,8 @@
   "rate_limit_seconds": 2,
   "login_allowed": false,
   "archiver_enabled": true,
-  "parser_key": "generic_listing",
+  "parser_key": "pisos_detail",
   "notes": "Source activa para pipeline de snapshots.",
   "timeout_seconds": 20
 }
+

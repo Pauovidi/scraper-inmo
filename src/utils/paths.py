@@ -33,3 +33,7 @@ def parsed_dir() -> Path:
 
 def discovered_dir() -> Path:
     return data_dir() / "discovered"
+
+
+def exports_dir() -> Path:
+    return data_dir() / "exports"

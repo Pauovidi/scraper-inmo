@@ -5,14 +5,18 @@ from typing import Callable
 from src.config import load_source_by_domain
 from src.parsers.generic_parser import parse_generic_snapshot
 from src.parsers.models import ParsedRecord
+from src.parsers.pisos_detail_parser import parse_pisos_detail_snapshot
 from src.parsers.snapshot_bridge import SnapshotBundle
 
 ParserFn = Callable[[SnapshotBundle, str], ParsedRecord]
 
+PARSER_REGISTRY: dict[str, ParserFn] = {
+    "pisos_detail": parse_pisos_detail_snapshot,
+}
+
 
 def get_parser(parser_key: str) -> ParserFn:
-    # Placeholder for future source-specific parsers.
-    return parse_generic_snapshot
+    return PARSER_REGISTRY.get(parser_key, parse_generic_snapshot)
 
 
 def resolve_parser_key_for_domain(domain: str) -> str:
