@@ -3,13 +3,12 @@
   "enabled": true,
   "mode": "seed_only",
   "start_urls": [
-    "https://www.pisos.com/alquiler/naves-bizkaia/"
+    "https://www.pisos.com/alquiler/"
   ],
   "rate_limit_seconds": 2,
   "login_allowed": false,
   "archiver_enabled": true,
   "parser_key": "pisos_detail",
-  "notes": "Source activa para pipeline de snapshots.",
+  "notes": "Seed ajustada para validación smoke evitando la ruta 404 previa.",
   "timeout_seconds": 20
 }
-

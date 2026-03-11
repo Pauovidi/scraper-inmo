@@ -3,6 +3,13 @@ from __future__ import annotations
 import re
 
 
+CURRENCY_PRICE_RE = re.compile(
+    r"(?:€|eur|euro|euros|\$|usd|£|gbp)\s*(\d[\d\.,\s]{1,})|(\d[\d\.,\s]{1,})\s*(?:€|eur|euro|euros|\$|usd|£|gbp)",
+    re.IGNORECASE,
+)
+PLAIN_NUMBER_RE = re.compile(r"\d[\d\.,\s]{1,}")
+
+
 def _to_float(number_text: str) -> float | None:
     value = number_text.strip().replace(" ", "")
     if not value:
@@ -32,6 +39,30 @@ def _to_float(number_text: str) -> float | None:
         return None
 
 
+def _extract_price_number(source: str, *, allow_plain_number: bool) -> float | None:
+    if not source:
+        return None
+
+    currency_match = CURRENCY_PRICE_RE.search(source)
+    if currency_match:
+        number_text = currency_match.group(1) or currency_match.group(2) or ""
+        return _to_float(number_text)
+
+    if not allow_plain_number:
+        return None
+
+    for match in PLAIN_NUMBER_RE.finditer(source):
+        token = match.group(0)
+        digits = re.sub(r"\D", "", token)
+        if len(digits) < 3:
+            continue
+        value = _to_float(token)
+        if value is not None:
+            return value
+
+    return None
+
+
 def normalize_price(price_text: str | None, fallback_text: str | None = None) -> tuple[float | None, str | None]:
     source = " ".join(part for part in [price_text, fallback_text] if part)
     if not source:
@@ -46,11 +77,13 @@ def normalize_price(price_text: str | None, fallback_text: str | None = None) ->
     elif "£" in source or "gbp" in lower:
         currency = "GBP"
 
-    match = re.search(r"\d[\d\.,\s]{1,}", source)
-    if not match:
-        return None, currency
+    value = None
+    if price_text:
+        value = _extract_price_number(price_text, allow_plain_number=True)
 
-    value = _to_float(match.group(0))
+    if value is None and fallback_text:
+        value = _extract_price_number(fallback_text, allow_plain_number=False)
+
     return value, currency
 
 

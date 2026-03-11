@@ -42,8 +42,8 @@ class FotocasaDetailParserTests(unittest.TestCase):
             meta = {
                 "snapshot_id": "snap_fotocasa_001",
                 "run_id": "run_fotocasa_001",
-                "url_original": "https://www.fotocasa.es/es/comprar/locales/bizkaia/l/123456/",
-                "url_final": "https://www.fotocasa.es/es/comprar/locales/bizkaia/l/123456/",
+                "url_original": "https://www.fotocasa.es/es/comprar/vivienda/bilbao/188901695/d?from=list",
+                "url_final": "https://www.fotocasa.es/es/comprar/vivienda/bilbao/188901695/d?from=list",
                 "domain": "fotocasa.es",
                 "files": {
                     "page_html": str(html_path),
@@ -57,7 +57,8 @@ class FotocasaDetailParserTests(unittest.TestCase):
             record = parse_snapshot(snapshot_dir)
 
             self.assertEqual(record["parser_key"], "fotocasa_detail")
-            self.assertIn(record["page_kind"], {"detail", "unknown"})
+            self.assertEqual(record["page_kind"], "detail")
+            self.assertEqual(record["parse_status"], "ok")
             self.assertEqual(record["price_currency"], "EUR")
             self.assertEqual(record["price_value"], 450000.0)
             self.assertEqual(record["surface_sqm"], 980.0)

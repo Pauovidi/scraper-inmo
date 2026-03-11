@@ -83,20 +83,23 @@ def _description(markdown: str | None, html: str | None) -> str | None:
     return cleaned[:1200]
 
 
-def _page_kind(url: str, links_count: int, has_price: bool, has_surface: bool, title: str | None) -> str:
+def _page_kind(url: str, links_count: int, has_price: bool, has_surface: bool, has_rooms: bool, title: str | None) -> str:
     low = url.lower()
     title_low = (title or "").lower()
 
-    detail_tokens = ["/inmueble/", "/ficha", "/detalle", "id-"]
-    listing_tokens = ["/buscar", "/alquiler", "/venta", "resultados", "/naves"]
-
-    if any(token in low for token in detail_tokens):
-        return "detail"
+    listing_tokens = ["/buscar", "/alquiler", "/venta", "resultados", "/naves", "/inmobiliaria", "/agencia", "clientid="]
+    detail_tokens = ["/inmueble/", "/ficha", "/detalle", "id-", "/d?"]
 
     if any(token in low for token in listing_tokens) and links_count >= 5:
         return "listing"
 
-    if (has_price and has_surface and links_count <= 15) or "nave" in title_low and has_price:
+    if any(token in low for token in detail_tokens):
+        return "detail"
+
+    if has_price and has_surface and has_rooms and links_count <= 12:
+        return "detail"
+
+    if "nave" in title_low and has_price and has_surface and has_rooms:
         return "detail"
 
     if links_count >= 20:
@@ -105,8 +108,15 @@ def _page_kind(url: str, links_count: int, has_price: bool, has_surface: bool, t
     return "unknown"
 
 
-def _confidence(fields_present: int) -> float:
-    return max(0.1, min(1.0, fields_present / 7))
+def _confidence(fields_present: int, *, page_kind: str, has_price_value: bool, has_location: bool) -> float:
+    score = max(0.1, min(1.0, fields_present / 7))
+    if page_kind != "detail":
+        score = min(score * 0.6, 0.55)
+    if not has_price_value:
+        score -= 0.12
+    if not has_location:
+        score -= 0.08
+    return max(0.1, min(1.0, score))
 
 
 def parse_generic_snapshot(bundle: SnapshotBundle, parser_key: str = "generic") -> ParsedRecord:
@@ -128,18 +138,35 @@ def parse_generic_snapshot(bundle: SnapshotBundle, parser_key: str = "generic") 
     surface_sqm = normalize_surface_sqm(surface_text, combined_text)
     rooms_count = normalize_rooms_count(rooms_text, combined_text)
 
+    page_kind = _page_kind(
+        meta.get("url_final", ""),
+        len(links),
+        bool(price_value),
+        bool(surface_sqm),
+        bool(rooms_count),
+        title,
+    )
+
     fields_present = sum(1 for value in [title, price_text, location_text, surface_text, rooms_text, desc] if value)
 
-    if fields_present >= 3:
-        parse_status = "ok"
-    elif fields_present >= 1:
-        parse_status = "partial"
+    if page_kind == "detail":
+        if fields_present >= 3 and price_value is not None:
+            parse_status = "ok"
+        elif fields_present >= 1:
+            parse_status = "partial"
+        else:
+            parse_status = "error"
     else:
-        parse_status = "error"
+        if fields_present >= 3:
+            parse_status = "partial"
+        else:
+            parse_status = "error"
 
     errors: list[str] = []
     if not (html or markdown):
         errors.append("missing_html_and_markdown")
+    if page_kind != "detail":
+        errors.append("non_detail_page_kind")
 
     return ParsedRecord(
         parser_key=parser_key,
@@ -149,13 +176,7 @@ def parse_generic_snapshot(bundle: SnapshotBundle, parser_key: str = "generic") 
         snapshot_path=meta.get("snapshot_path", str(bundle.snapshot_path)),
         url_original=meta.get("url_original", ""),
         url_final=meta.get("url_final", ""),
-        page_kind=_page_kind(
-            meta.get("url_final", ""),
-            len(links),
-            bool(price_text),
-            bool(surface_text),
-            title,
-        ),
+        page_kind=page_kind,
         title=title,
         price_text=price_text,
         price_value=price_value,
@@ -170,5 +191,13 @@ def parse_generic_snapshot(bundle: SnapshotBundle, parser_key: str = "generic") 
         extracted_at=now_utc_iso(),
         parse_status=parse_status,
         parse_errors=errors,
-        confidence_score=round(_confidence(fields_present), 2),
+        confidence_score=round(
+            _confidence(
+                fields_present,
+                page_kind=page_kind,
+                has_price_value=price_value is not None,
+                has_location=bool(location_text),
+            ),
+            2,
+        ),
     )

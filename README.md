@@ -132,3 +132,17 @@ python -m unittest discover -s tests -p "test_*.py" -v
 - Parsers específicos aún heurísticos (no parser completo por portal).
 - No hay crawling profundo ni anti-bot avanzado.
 - Sin Playwright/OCR/login automático en esta fase.
+
+## Job smoke de validación
+Para validaciones rápidas y controladas (evitando ruido por seeds con 403/404), se añade:
+- `config/jobs/bizkaia_naves_smoke.yaml`
+
+Ejecución:
+```powershell
+python -m src.main run-job-full --job bizkaia_naves_smoke
+```
+
+Notas de calidad actuales:
+- Discovery ahora excluye URLs de perfil/agencia/listado intermedio y canonicaliza parámetros de tracking/galería para deduplicar.
+- El parser de detalle baja `parse_status`/`confidence_score` cuando faltan señales mínimas de ficha fiable.
+- La normalización de precio evita falsos positivos tipo `"Precio" -> 1.0`.

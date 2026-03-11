@@ -47,14 +47,32 @@ def _regex_find(pattern: re.Pattern[str], text: str | None) -> str | None:
     return _compact(match.group(0))
 
 
-def _resolve_page_kind(url: str, links_count: int, has_price: bool, has_surface: bool) -> str:
+def _resolve_page_kind(url: str, links_count: int, has_price: bool, has_surface: bool, has_rooms: bool) -> str:
     low = url.lower()
-    if any(token in low for token in ["/es/comprar/", "/es/alquilar/", "/l/"]) and links_count >= 12:
+
+    listing_hints = [
+        "/inmobiliaria",
+        "/agencia",
+        "/perfil",
+        "clientid=",
+        "/todas-las-zonas/l",
+        "/es/comprar/locales/",
+        "/es/alquilar/locales/",
+    ]
+    detail_hints = ["/d?", "/inmueble/", "/detalle", "/ficha"]
+
+    if any(token in low for token in listing_hints):
         return "listing"
-    if any(token in low for token in ["/vivienda/", "/inmueble/", "/detalle", "id"]):
+
+    if any(token in low for token in detail_hints):
         return "detail"
-    if has_price and has_surface and links_count <= 15:
+
+    if has_price and has_surface and has_rooms and links_count <= 10:
         return "detail"
+
+    if links_count >= 15:
+        return "listing"
+
     return "unknown"
 
 
@@ -140,21 +158,6 @@ def parse_fotocasa_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "fo
     surface_sqm = normalize_surface_sqm(surface_text, combined)
     rooms_count = normalize_rooms_count(rooms_text, combined)
 
-    fields_present = sum(1 for value in [title, price_text, location_text, surface_text, rooms_text, description_text] if value)
-    if fields_present >= 4:
-        parse_status = "ok"
-    elif fields_present >= 2:
-        parse_status = "partial"
-    else:
-        parse_status = "error"
-
-    parse_errors: list[str] = []
-    if not (html or markdown):
-        parse_errors.append("missing_html_and_markdown")
-
-    confidence = 0.33 + (fields_present * 0.1)
-    confidence = max(0.2, min(0.98, confidence))
-
     dedup_links: list[str] = []
     seen: set[str] = set()
     for link in extracted_links:
@@ -162,6 +165,42 @@ def parse_fotocasa_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "fo
             continue
         seen.add(link)
         dedup_links.append(link)
+
+    page_kind = _resolve_page_kind(
+        str(meta.get("url_final", "")),
+        len(extracted_links),
+        bool(price_value),
+        bool(surface_sqm),
+        bool(rooms_count),
+    )
+
+    fields_present = sum(1 for value in [title, price_text, location_text, surface_text, rooms_text, description_text] if value)
+    parse_errors: list[str] = []
+
+    if not (html or markdown):
+        parse_status = "error"
+        parse_errors.append("missing_html_and_markdown")
+    elif page_kind != "detail":
+        if fields_present >= 3:
+            parse_status = "partial"
+        else:
+            parse_status = "error"
+        parse_errors.append("non_detail_page_kind")
+    elif fields_present >= 4 and price_value is not None and location_text and (surface_sqm is not None or rooms_count is not None):
+        parse_status = "ok"
+    elif fields_present >= 2:
+        parse_status = "partial"
+    else:
+        parse_status = "error"
+
+    confidence = 0.25 + (fields_present * 0.08)
+    if page_kind != "detail":
+        confidence = min(confidence * 0.6, 0.55)
+    if price_value is None:
+        confidence -= 0.12
+    if not location_text:
+        confidence -= 0.08
+    confidence = max(0.1, min(0.98, confidence))
 
     return ParsedRecord(
         parser_key=parser_key,
@@ -171,7 +210,7 @@ def parse_fotocasa_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "fo
         snapshot_path=meta.get("snapshot_path", str(bundle.snapshot_path)),
         url_original=meta.get("url_original", ""),
         url_final=meta.get("url_final", ""),
-        page_kind=_resolve_page_kind(str(meta.get("url_final", "")), len(extracted_links), bool(price_text), bool(surface_text)),
+        page_kind=page_kind,
         title=title,
         price_text=price_text,
         price_value=price_value,
@@ -188,3 +227,5 @@ def parse_fotocasa_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "fo
         parse_errors=parse_errors,
         confidence_score=round(confidence, 2),
     )
+
+
