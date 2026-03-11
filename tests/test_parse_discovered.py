@@ -38,7 +38,7 @@ def _write_snapshot(snapshot_dir: Path, *, domain: str, url_final: str, html: st
 
 
 class ParseDiscoveredTests(unittest.TestCase):
-    def test_pisos_detail_parser_extracts_key_fields(self) -> None:
+    def test_pisos_detail_parser_extracts_key_fields_and_normalized_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             snapshot_dir = _write_snapshot(
@@ -67,13 +67,13 @@ class ParseDiscoveredTests(unittest.TestCase):
             self.assertEqual(record["parser_key"], "pisos_detail")
             self.assertEqual(record["page_kind"], "detail")
             self.assertTrue(record["title"])
-            self.assertTrue(record["price_text"])
-            self.assertTrue(record["location_text"])
-            self.assertTrue(record["surface_text"])
-            self.assertTrue(record["rooms_text"])
+            self.assertEqual(record["price_currency"], "EUR")
+            self.assertEqual(record["price_value"], 235000.0)
+            self.assertEqual(record["surface_sqm"], 1200.0)
+            self.assertEqual(record["rooms_count"], 3)
             self.assertGreaterEqual(record["confidence_score"], 0.6)
 
-    def test_parse_discovered_persists_parsed_details_and_exports(self) -> None:
+    def test_parse_discovered_exports_include_normalized_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             job_name = "bizkaia_naves"
@@ -130,7 +130,9 @@ class ParseDiscoveredTests(unittest.TestCase):
             self.assertTrue(parsed_details.exists())
             parsed_lines = [json.loads(line) for line in parsed_details.read_text(encoding="utf-8").splitlines() if line.strip()]
             self.assertEqual(len(parsed_lines), 1)
-            self.assertEqual(parsed_lines[0]["parser_key"], "pisos_detail")
+            self.assertEqual(parsed_lines[0]["price_value"], 1600.0)
+            self.assertEqual(parsed_lines[0]["surface_sqm"], 450.0)
+            self.assertEqual(parsed_lines[0]["rooms_count"], 2)
 
             export_jsonl = Path(summary["export_jsonl_path"])
             export_csv = Path(summary["export_csv_path"])
@@ -139,8 +141,15 @@ class ParseDiscoveredTests(unittest.TestCase):
 
             export_rows = [json.loads(line) for line in export_jsonl.read_text(encoding="utf-8").splitlines() if line.strip()]
             self.assertEqual(len(export_rows), 1)
-            self.assertIn("source_domain", export_rows[0])
-            self.assertIn("parse_status", export_rows[0])
+            self.assertIn("price_value", export_rows[0])
+            self.assertIn("price_currency", export_rows[0])
+            self.assertIn("surface_sqm", export_rows[0])
+            self.assertIn("rooms_count", export_rows[0])
+
+            csv_header = export_csv.read_text(encoding="utf-8").splitlines()[0]
+            self.assertIn("price_value", csv_header)
+            self.assertIn("surface_sqm", csv_header)
+            self.assertIn("rooms_count", csv_header)
 
 
 if __name__ == "__main__":

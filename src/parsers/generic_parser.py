@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
-from typing import Any
 
 try:
     from bs4 import BeautifulSoup  # type: ignore
@@ -10,16 +8,14 @@ except Exception:  # pragma: no cover
     BeautifulSoup = None
 
 from src.parsers.models import ParsedRecord
+from src.parsers.normalization import normalize_price, normalize_rooms_count, normalize_surface_sqm
 from src.parsers.snapshot_bridge import SnapshotBundle
+from src.utils.time_utils import now_utc_iso
 
 PRICE_RE = re.compile(r"(?:€|eur|euro|euros|\$|£)\s?\d[\d\.,\s]*|\d[\d\.,\s]*(?:€|eur|euro|euros)", re.IGNORECASE)
 SURFACE_RE = re.compile(r"\b\d{1,4}\s?(?:m2|m²|metros cuadrados|sqm)\b", re.IGNORECASE)
 ROOMS_RE = re.compile(r"\b\d{1,2}\s?(?:habitaciones|hab\.?|rooms?)\b", re.IGNORECASE)
 LOCATION_HINT_RE = re.compile(r"\b(?:bizkaia|bilbao|madrid|barcelona|valencia|sevilla)\b", re.IGNORECASE)
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _extract_title_from_html(html: str | None) -> str | None:
@@ -100,7 +96,6 @@ def _page_kind(url: str, links_count: int, has_price: bool, has_surface: bool, t
     if any(token in low for token in listing_tokens) and links_count >= 5:
         return "listing"
 
-    # Detail pages usually show structured facts and fewer outbound links.
     if (has_price and has_surface and links_count <= 15) or "nave" in title_low and has_price:
         return "detail"
 
@@ -129,11 +124,11 @@ def parse_generic_snapshot(bundle: SnapshotBundle, parser_key: str = "generic") 
     links = _extract_links(html)
     desc = _description(markdown, html)
 
-    fields_present = sum(
-        1
-        for value in [title, price_text, location_text, surface_text, rooms_text, desc]
-        if value
-    )
+    price_value, price_currency = normalize_price(price_text, combined_text)
+    surface_sqm = normalize_surface_sqm(surface_text, combined_text)
+    rooms_count = normalize_rooms_count(rooms_text, combined_text)
+
+    fields_present = sum(1 for value in [title, price_text, location_text, surface_text, rooms_text, desc] if value)
 
     if fields_present >= 3:
         parse_status = "ok"
@@ -163,14 +158,17 @@ def parse_generic_snapshot(bundle: SnapshotBundle, parser_key: str = "generic") 
         ),
         title=title,
         price_text=price_text,
+        price_value=price_value,
+        price_currency=price_currency,
         location_text=location_text,
         surface_text=surface_text,
+        surface_sqm=surface_sqm,
         rooms_text=rooms_text,
+        rooms_count=rooms_count,
         description_text=desc,
         extracted_links=links,
-        extracted_at=_now_iso(),
+        extracted_at=now_utc_iso(),
         parse_status=parse_status,
         parse_errors=errors,
         confidence_score=round(_confidence(fields_present), 2),
     )
-

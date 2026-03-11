@@ -105,9 +105,6 @@ def run_job_full(
     pipeline_index_file: Path | None = None,
     log_fn: Callable[[str], None] = print,
 ) -> PipelineRunResult:
-    manifest_path: Path
-    manifest: dict[str, Any]
-
     if resume:
         latest = _find_latest_manifest(job_name=job_name, root_dir=pipeline_root_dir)
         if latest is not None:
@@ -141,7 +138,6 @@ def run_job_full(
     step_statuses: dict[str, str] = dict(manifest.get("step_statuses", {}))
     errors_summary: list[dict[str, Any]] = list(manifest.get("errors_summary", []))
 
-    # Step 1: run-job
     job_run_id = manifest.get("job_run_id")
     job_manifest_path = manifest.get("job_manifest_path")
 
@@ -163,7 +159,6 @@ def run_job_full(
             _append_error(errors_summary, "run-job", exc)
             log_fn(f"[pipeline] step=run-job status=failed error={type(exc).__name__}")
 
-    # Step 2: discover-job-run
     discovery_summary_path = manifest.get("discovery_summary_path")
     discovered_output_path = manifest.get("discovered_output_path")
     discovery_run_id = manifest.get("discovery_run_id") or job_run_id
@@ -191,7 +186,6 @@ def run_job_full(
             _append_error(errors_summary, "discover-job-run", exc)
             log_fn(f"[pipeline] step=discover-job-run status=failed error={type(exc).__name__}")
 
-    # Step 3: archive-discovered
     archive_summary_path = manifest.get("archive_discovered_summary_path")
     if step_statuses.get("discover-job-run") == "failed":
         step_statuses["archive-discovered"] = "skipped"
@@ -217,7 +211,6 @@ def run_job_full(
             _append_error(errors_summary, "archive-discovered", exc)
             log_fn(f"[pipeline] step=archive-discovered status=failed error={type(exc).__name__}")
 
-    # Step 4: parse-discovered + exports
     parse_summary_path = manifest.get("parse_discovered_summary_path")
     if step_statuses.get("archive-discovered") == "failed":
         step_statuses["parse-discovered"] = "skipped"
@@ -242,7 +235,6 @@ def run_job_full(
             _append_error(errors_summary, "parse-discovered", exc)
             log_fn(f"[pipeline] step=parse-discovered status=failed error={type(exc).__name__}")
 
-    # final status
     counts = manifest.get("archive_discovered_counts", {})
     has_nonfatal_errors = bool((counts.get("error_count", 0) or 0) > 0)
     if any(value == "failed" for value in step_statuses.values()):
@@ -262,6 +254,14 @@ def run_job_full(
     manifest["discovery_run_id"] = discovery_run_id
     manifest["archive_discovered_summary_path"] = archive_summary_path
     manifest["parse_discovered_summary_path"] = parse_summary_path
+    manifest["output_job_run_id"] = job_run_id
+    manifest["output_paths"] = {
+        "discovered_output_path": discovered_output_path,
+        "archive_discovered_summary_path": archive_summary_path,
+        "parse_discovered_summary_path": parse_summary_path,
+        "export_jsonl_path": (manifest.get("export_paths") or {}).get("jsonl"),
+        "export_csv_path": (manifest.get("export_paths") or {}).get("csv"),
+    }
 
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8")
 

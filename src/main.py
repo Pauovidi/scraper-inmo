@@ -18,7 +18,7 @@ from src.config import (
 from src.discovery import archive_discovered, discover_job_run
 from src.jobs import list_job_runs, load_job_run_manifest, run_job
 from src.parsers import parse_discovered, parse_job_run, parse_snapshot
-from src.pipeline import run_job_full
+from src.pipeline import list_pipeline_runs, load_pipeline_run_manifest, run_job_full
 
 
 def _print_json(data: object) -> None:
@@ -150,6 +150,43 @@ def _cmd_list_snapshots(args: argparse.Namespace) -> int:
                 ]
             )
         )
+    return 0
+
+
+def _cmd_list_pipeline_runs(args: argparse.Namespace) -> int:
+    rows = list_pipeline_runs(job_name=args.job)
+
+    if args.as_json:
+        _print_json(rows)
+        return 0
+
+    if not rows:
+        print("No pipeline runs found")
+        return 0
+
+    for row in rows:
+        print(
+            " | ".join(
+                [
+                    row.get("job_name", ""),
+                    row.get("pipeline_run_id", ""),
+                    row.get("status", ""),
+                    row.get("timestamp_utc_start", ""),
+                    row.get("timestamp_utc_end", ""),
+                ]
+            )
+        )
+    return 0
+
+
+def _cmd_show_pipeline_run(args: argparse.Namespace) -> int:
+    try:
+        manifest = load_pipeline_run_manifest(job_name=args.job, pipeline_run_id=args.pipeline_run_id)
+    except (KeyError, FileNotFoundError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    _print_json(manifest)
     return 0
 
 
@@ -308,6 +345,16 @@ def build_parser() -> argparse.ArgumentParser:
     list_parser.add_argument("--status", help="Filter by status (ok, partial, error)")
     list_parser.add_argument("--json", dest="as_json", action="store_true", help="Output raw JSON")
     list_parser.set_defaults(func=_cmd_list_snapshots)
+
+    list_pipeline_parser = subparsers.add_parser("list-pipeline-runs", help="List pipeline full-run executions")
+    list_pipeline_parser.add_argument("--job", help="Filter by job name")
+    list_pipeline_parser.add_argument("--json", dest="as_json", action="store_true", help="Output raw JSON")
+    list_pipeline_parser.set_defaults(func=_cmd_list_pipeline_runs)
+
+    show_pipeline_parser = subparsers.add_parser("show-pipeline-run", help="Show one pipeline run manifest")
+    show_pipeline_parser.add_argument("--job", required=True, help="Job name")
+    show_pipeline_parser.add_argument("--pipeline-run-id", required=True, help="Pipeline run id")
+    show_pipeline_parser.set_defaults(func=_cmd_show_pipeline_run)
 
     list_sources_parser = subparsers.add_parser("list-sources", help="List configured sources")
     list_sources_parser.add_argument("--json", dest="as_json", action="store_true", help="Output raw JSON")

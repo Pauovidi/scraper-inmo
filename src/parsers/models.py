@@ -16,9 +16,13 @@ class ParsedRecord:
     page_kind: str
     title: str | None
     price_text: str | None
+    price_value: float | None
+    price_currency: str | None
     location_text: str | None
     surface_text: str | None
+    surface_sqm: float | None
     rooms_text: str | None
+    rooms_count: int | None
     description_text: str | None
     extracted_links: list[str] = field(default_factory=list)
     extracted_at: str = ""

@@ -33,10 +33,13 @@ RULES_BY_PARSER_KEY = {
         "include": [r"/inmueble", r"/ficha", r"/detalle", r"/anuncio"],
         "exclude": [r"/contacto", r"/favoritos", r"/mapa"],
     },
-    # First portal-specific discovery ruleset
     "idealista_listing": {
         "include": [r"/inmueble/", r"\d{6,}"],
         "exclude": [r"/agencia", r"/obra-nueva", r"/mapa"],
+    },
+    "fotocasa_detail": {
+        "include": [r"/es/comprar/", r"/es/alquilar/", r"/vivienda/", r"\d{6,}"],
+        "exclude": [r"/mapa", r"/agencia", r"/blog", r"/ayuda"],
     },
 }
 

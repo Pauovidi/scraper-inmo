@@ -49,16 +49,16 @@ def _regex_find(pattern: re.Pattern[str], text: str | None) -> str | None:
 
 def _resolve_page_kind(url: str, links_count: int, has_price: bool, has_surface: bool) -> str:
     low = url.lower()
-    if any(token in low for token in ["/inmueble/", "/ficha", "/detalle"]):
-        return "detail"
-    if any(token in low for token in ["/alquiler", "/venta", "/buscar", "resultados"]) and links_count >= 8:
+    if any(token in low for token in ["/es/comprar/", "/es/alquilar/", "/l/"]) and links_count >= 12:
         return "listing"
+    if any(token in low for token in ["/vivienda/", "/inmueble/", "/detalle", "id"]):
+        return "detail"
     if has_price and has_surface and links_count <= 15:
         return "detail"
     return "unknown"
 
 
-def parse_pisos_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "pisos_detail") -> ParsedRecord:
+def parse_fotocasa_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "fotocasa_detail") -> ParsedRecord:
     meta = bundle.meta
     html = bundle.html or ""
     markdown = bundle.markdown or ""
@@ -88,7 +88,7 @@ def parse_pisos_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "pisos
             soup,
             [
                 "[class*='price']",
-                "[id*='price']",
+                "[class*='Price']",
                 "meta[property='product:price:amount']",
             ],
         )
@@ -104,7 +104,7 @@ def parse_pisos_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "pisos
             ],
         )
 
-        info_text = _from_selectors(soup, ["[class*='features']", "[class*='characteristics']", "ul"]) or combined
+        info_text = _from_selectors(soup, ["[class*='feature']", "[class*='characteristic']", "ul", "section"]) or combined
         surface_text = _regex_find(SURFACE_RE, info_text)
         rooms_text = _regex_find(ROOMS_RE, info_text)
 
@@ -123,9 +123,9 @@ def parse_pisos_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "pisos
                 extracted_links.append(str(href).strip())
 
     if not title:
-        t = _regex_find(re.compile(r"^#\s+(.+)$", re.MULTILINE), markdown)
-        if t:
-            title = _compact(t.replace("#", ""))
+        title = _regex_find(re.compile(r"^#\s+(.+)$", re.MULTILINE), markdown)
+        if title:
+            title = _compact(title.replace("#", ""))
 
     if not price_text:
         price_text = _regex_find(PRICE_RE, combined)
@@ -133,7 +133,6 @@ def parse_pisos_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "pisos
         surface_text = _regex_find(SURFACE_RE, combined)
     if not rooms_text:
         rooms_text = _regex_find(ROOMS_RE, combined)
-
     if not description_text:
         description_text = _compact(combined[:1500])
 
@@ -142,7 +141,6 @@ def parse_pisos_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "pisos
     rooms_count = normalize_rooms_count(rooms_text, combined)
 
     fields_present = sum(1 for value in [title, price_text, location_text, surface_text, rooms_text, description_text] if value)
-
     if fields_present >= 4:
         parse_status = "ok"
     elif fields_present >= 2:
@@ -154,15 +152,8 @@ def parse_pisos_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "pisos
     if not (html or markdown):
         parse_errors.append("missing_html_and_markdown")
 
-    confidence = 0.35 + (fields_present * 0.1)
+    confidence = 0.33 + (fields_present * 0.1)
     confidence = max(0.2, min(0.98, confidence))
-
-    page_kind = _resolve_page_kind(
-        str(meta.get("url_final", "")),
-        links_count=len(extracted_links),
-        has_price=bool(price_text),
-        has_surface=bool(surface_text),
-    )
 
     dedup_links: list[str] = []
     seen: set[str] = set()
@@ -180,7 +171,7 @@ def parse_pisos_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "pisos
         snapshot_path=meta.get("snapshot_path", str(bundle.snapshot_path)),
         url_original=meta.get("url_original", ""),
         url_final=meta.get("url_final", ""),
-        page_kind=page_kind,
+        page_kind=_resolve_page_kind(str(meta.get("url_final", "")), len(extracted_links), bool(price_text), bool(surface_text)),
         title=title,
         price_text=price_text,
         price_value=price_value,

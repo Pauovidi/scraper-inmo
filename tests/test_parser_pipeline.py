@@ -37,6 +37,10 @@ class ParserPipelineTests(unittest.TestCase):
             self.assertTrue(record["title"])
             self.assertTrue(record["price_text"])
             self.assertTrue(record["surface_text"])
+            self.assertEqual(record["price_currency"], "EUR")
+            self.assertEqual(record["price_value"], 250000.0)
+            self.assertEqual(record["surface_sqm"], 1200.0)
+            self.assertEqual(record["rooms_count"], 3)
             self.assertGreaterEqual(len(record["extracted_links"]), 1)
 
     def test_registry_fallback_to_generic_for_unknown_domain(self) -> None:
@@ -102,4 +106,3 @@ class ParserPipelineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

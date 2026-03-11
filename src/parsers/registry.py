@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Callable
 
 from src.config import load_source_by_domain
+from src.parsers.fotocasa_detail_parser import parse_fotocasa_detail_snapshot
 from src.parsers.generic_parser import parse_generic_snapshot
 from src.parsers.models import ParsedRecord
 from src.parsers.pisos_detail_parser import parse_pisos_detail_snapshot
@@ -12,6 +13,7 @@ ParserFn = Callable[[SnapshotBundle, str], ParsedRecord]
 
 PARSER_REGISTRY: dict[str, ParserFn] = {
     "pisos_detail": parse_pisos_detail_snapshot,
+    "fotocasa_detail": parse_fotocasa_detail_snapshot,
 }
 
 
