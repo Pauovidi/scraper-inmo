@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import urlparse
 
 try:
     from bs4 import BeautifulSoup  # type: ignore
@@ -15,6 +16,29 @@ from src.utils.time_utils import now_utc_iso
 PRICE_RE = re.compile(r"\d[\d\.,\s]{2,}\s?€|€\s?\d[\d\.,\s]{2,}", re.IGNORECASE)
 SURFACE_RE = re.compile(r"\b\d{1,4}\s?(?:m2|m²|metros?)\b", re.IGNORECASE)
 ROOMS_RE = re.compile(r"\b\d{1,2}\s?(?:hab(?:itaciones)?\.?|dormitorios|rooms?)\b", re.IGNORECASE)
+
+LOCATION_STOPWORDS = {
+    "espana",
+    "españa",
+    "todas las zonas",
+    "comprar",
+    "alquilar",
+    "locales",
+    "viviendas",
+    "fotocasa",
+}
+DESCRIPTION_NOISE_PATTERNS = [
+    r"conecta tu hogar",
+    r"elige la fibra",
+    r"comprueba cobertura",
+    r"ver tarifas",
+    r"ofrecido por",
+    r"contactar",
+    r"llamar",
+    r"hace \d+ d[ií]as",
+    r"top\+",
+    r"que mejor se adapte a ti",
+]
 
 
 def _compact(text: str | None) -> str | None:
@@ -45,6 +69,126 @@ def _regex_find(pattern: re.Pattern[str], text: str | None) -> str | None:
     if not match:
         return None
     return _compact(match.group(0))
+
+
+def _clean_location_candidate(value: str | None) -> str | None:
+    cleaned = _compact(value)
+    if not cleaned:
+        return None
+
+    low = cleaned.lower()
+    if any(stop in low for stop in LOCATION_STOPWORDS):
+        return None
+
+    if len(cleaned) < 3 or len(cleaned) > 80:
+        return None
+
+    if not re.search(r"[a-záéíóúñ]", low, re.IGNORECASE):
+        return None
+
+    return cleaned
+
+
+def _title_location(title: str | None) -> str | None:
+    if not title:
+        return None
+    normalized = re.sub(r"\s+", " ", title)
+    parts = [p.strip() for p in normalized.split(",") if p.strip()]
+    if len(parts) >= 2:
+        for part in reversed(parts):
+            candidate = _clean_location_candidate(part)
+            if candidate:
+                return candidate
+    return None
+
+
+def _url_location(url: str | None) -> str | None:
+    if not url:
+        return None
+    path = urlparse(url).path
+    pieces = [p for p in path.split("/") if p]
+    for idx, part in enumerate(pieces):
+        if part in {"local-comercial", "vivienda", "piso", "nave", "locales-comerciales"} and idx + 1 < len(pieces):
+            candidate = pieces[idx + 1].replace("-", " ").strip()
+            return _clean_location_candidate(candidate)
+    return None
+
+
+def _extract_location(soup, title: str | None, url: str | None, combined: str) -> str | None:
+    selector_candidates = [
+        "[class*='location']",
+        "[class*='address']",
+        "[class*='zone']",
+        "meta[property='og:locality']",
+        "[itemprop*='addressLocality']",
+    ]
+    for selector in selector_candidates:
+        candidate = _from_selectors(soup, [selector])
+        candidate = _clean_location_candidate(candidate)
+        if candidate:
+            return candidate
+
+    breadcrumb_candidates: list[str] = []
+    for selector in ["nav[aria-label*='miga'] a", "[class*='breadcrumb'] a", "[data-testid*='breadcrumb'] a"]:
+        for node in soup.select(selector):
+            text = _compact(node.get_text(" ", strip=True))
+            if text:
+                breadcrumb_candidates.append(text)
+
+    for item in reversed(breadcrumb_candidates):
+        candidate = _clean_location_candidate(item)
+        if candidate:
+            return candidate
+
+    from_title = _clean_location_candidate(_title_location(title))
+    if from_title:
+        return from_title
+
+    from_url = _clean_location_candidate(_url_location(url))
+    if from_url:
+        return from_url
+
+    fallback = _regex_find(re.compile(r"\b(?:bilbao|bizkaia|sestao|barakaldo|getxo|durango)\b", re.IGNORECASE), combined)
+    return _clean_location_candidate(fallback)
+
+
+def _clean_description(text: str | None) -> str | None:
+    cleaned = _compact(text)
+    if not cleaned:
+        return None
+
+    for pattern in DESCRIPTION_NOISE_PATTERNS:
+        cleaned = re.sub(pattern, " ", cleaned, flags=re.IGNORECASE)
+
+    cleaned = re.sub(r"[*_`#]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .,-")
+    if not cleaned:
+        return None
+    if len(cleaned) < 30:
+        return None
+    return cleaned[:1500]
+
+
+def _extract_description(soup, combined: str) -> str | None:
+    selectors = [
+        "[data-testid*='description']",
+        "[class*='detail-description']",
+        "[class*='description']",
+        "[id*='description']",
+        "meta[property='og:description']",
+        "meta[name='description']",
+        "article",
+        "main",
+    ]
+    for selector in selectors:
+        candidate = _from_selectors(soup, [selector])
+        cleaned = _clean_description(candidate)
+        if cleaned:
+            return cleaned
+
+    lines = [line.strip() for line in (combined or "").splitlines() if line.strip()]
+    fallback_text = " ".join(lines[:20]) if lines else combined
+    return _clean_description(fallback_text)
 
 
 def _resolve_page_kind(url: str, links_count: int, has_price: bool, has_surface: bool, has_rooms: bool) -> str:
@@ -111,27 +255,12 @@ def parse_fotocasa_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "fo
         if not price_text:
             price_text = _regex_find(PRICE_RE, combined)
 
-        location_text = _from_selectors(
-            soup,
-            [
-                "[class*='location']",
-                "[class*='address']",
-                "[class*='zone']",
-            ],
-        )
-
         info_text = _from_selectors(soup, ["[class*='feature']", "[class*='characteristic']", "ul", "section"]) or combined
         surface_text = _regex_find(SURFACE_RE, info_text)
         rooms_text = _regex_find(ROOMS_RE, info_text)
 
-        description_text = _from_selectors(
-            soup,
-            [
-                "[class*='description']",
-                "[id*='description']",
-                "article",
-            ],
-        )
+        description_text = _extract_description(soup, combined)
+        location_text = _extract_location(soup, title, str(meta.get("url_final", "")), combined)
 
         for a in soup.find_all("a"):
             href = a.get("href")
@@ -149,8 +278,8 @@ def parse_fotocasa_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "fo
         surface_text = _regex_find(SURFACE_RE, combined)
     if not rooms_text:
         rooms_text = _regex_find(ROOMS_RE, combined)
-    if not description_text:
-        description_text = _compact(combined[:1500])
+    if not description_text and markdown:
+        description_text = _clean_description(markdown[:2500])
 
     price_value, price_currency = normalize_price(price_text, combined)
     surface_sqm = normalize_surface_sqm(surface_text, combined)
@@ -164,12 +293,17 @@ def parse_fotocasa_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "fo
         seen.add(link)
         dedup_links.append(link)
 
+    has_price = price_value is not None
+    has_surface_or_rooms = surface_sqm is not None or rooms_count is not None
+    has_location = bool(location_text)
+    has_description = bool(description_text and len(description_text) >= 60)
+
     page_kind = _resolve_page_kind(
         str(meta.get("url_final", "")),
         len(extracted_links),
-        bool(price_value),
-        bool(surface_sqm),
-        bool(rooms_count),
+        has_price,
+        surface_sqm is not None,
+        rooms_count is not None,
     )
 
     fields_present = sum(1 for value in [title, price_text, location_text, surface_text, rooms_text, description_text] if value)
@@ -179,25 +313,38 @@ def parse_fotocasa_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "fo
         parse_status = "error"
         parse_errors.append("missing_html_and_markdown")
     elif page_kind != "detail":
-        if fields_present >= 3:
-            parse_status = "partial"
-        else:
-            parse_status = "error"
+        parse_status = "partial" if fields_present >= 3 else "error"
         parse_errors.append("non_detail_page_kind")
-    elif fields_present >= 4 and price_value is not None and location_text and (surface_sqm is not None or rooms_count is not None):
+    elif has_price and has_surface_or_rooms and has_location and fields_present >= 4:
         parse_status = "ok"
+    elif has_price and has_surface_or_rooms and (has_location or has_description):
+        parse_status = "partial"
     elif fields_present >= 2:
         parse_status = "partial"
     else:
         parse_status = "error"
 
-    confidence = 0.25 + (fields_present * 0.08)
-    if page_kind != "detail":
-        confidence = min(confidence * 0.6, 0.55)
-    if price_value is None:
-        confidence -= 0.12
-    if not location_text:
+    confidence = 0.2
+    if page_kind == "detail":
+        confidence += 0.2
+    if has_price:
+        confidence += 0.2
+    if surface_sqm is not None:
+        confidence += 0.12
+    if rooms_count is not None:
+        confidence += 0.08
+    if has_location:
+        confidence += 0.15
+    if has_description:
+        confidence += 0.1
+    else:
         confidence -= 0.08
+
+    if parse_status == "partial":
+        confidence = min(confidence, 0.79)
+    elif parse_status == "error":
+        confidence = min(confidence, 0.49)
+
     confidence = max(0.1, min(0.98, confidence))
 
     return ParsedRecord(
@@ -225,6 +372,3 @@ def parse_fotocasa_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "fo
         parse_errors=parse_errors,
         confidence_score=round(confidence, 2),
     )
-
-
-
