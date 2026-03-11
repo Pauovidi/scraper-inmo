@@ -56,10 +56,8 @@ def _resolve_page_kind(url: str, links_count: int, has_price: bool, has_surface:
         "/perfil",
         "clientid=",
         "/todas-las-zonas/l",
-        "/es/comprar/locales/",
-        "/es/alquilar/locales/",
     ]
-    detail_hints = ["/d?", "/inmueble/", "/detalle", "/ficha"]
+    detail_hints = ["/d?", "/d", "/inmueble/", "/detalle", "/ficha"]
 
     if any(token in low for token in listing_hints):
         return "listing"
@@ -227,5 +225,6 @@ def parse_fotocasa_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "fo
         parse_errors=parse_errors,
         confidence_score=round(confidence, 2),
     )
+
 
 
