@@ -1,0 +1,203 @@
+from __future__ import annotations
+
+import re
+
+try:
+    from bs4 import BeautifulSoup  # type: ignore
+except Exception:  # pragma: no cover
+    BeautifulSoup = None
+
+from src.parsers.models import ParsedRecord
+from src.parsers.normalization import normalize_price, normalize_rooms_count, normalize_surface_sqm
+from src.parsers.snapshot_bridge import SnapshotBundle
+from src.utils.time_utils import now_utc_iso
+
+PRICE_RE = re.compile(r"(?:€|eur|euro|euros|\$|£)\s?\d[\d\.,\s]*|\d[\d\.,\s]*(?:€|eur|euro|euros)", re.IGNORECASE)
+SURFACE_RE = re.compile(r"\b\d{1,4}\s?(?:m2|m²|metros cuadrados|sqm)\b", re.IGNORECASE)
+ROOMS_RE = re.compile(r"\b\d{1,2}\s?(?:habitaciones|hab\.?|rooms?)\b", re.IGNORECASE)
+LOCATION_HINT_RE = re.compile(r"\b(?:bizkaia|bilbao|madrid|barcelona|valencia|sevilla)\b", re.IGNORECASE)
+
+
+def _extract_title_from_html(html: str | None) -> str | None:
+    if not html:
+        return None
+    if BeautifulSoup is None:
+        m = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+        if m:
+            return re.sub(r"\s+", " ", m.group(1)).strip()
+        return None
+
+    soup = BeautifulSoup(html, "lxml")
+    h1 = soup.find("h1")
+    if h1 and h1.get_text(strip=True):
+        return h1.get_text(" ", strip=True)
+    if soup.title and soup.title.get_text(strip=True):
+        return soup.title.get_text(" ", strip=True)
+    return None
+
+
+def _extract_links(html: str | None) -> list[str]:
+    if not html:
+        return []
+    if BeautifulSoup is None:
+        links = re.findall(r'href=["\']([^"\']+)["\']', html, re.IGNORECASE)
+    else:
+        soup = BeautifulSoup(html, "lxml")
+        links = [a.get("href", "").strip() for a in soup.find_all("a") if a.get("href")]
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for link in links:
+        if not link or link in seen:
+            continue
+        seen.add(link)
+        deduped.append(link)
+    return deduped[:200]
+
+
+def _find_first(pattern: re.Pattern[str], text: str | None) -> str | None:
+    if not text:
+        return None
+    m = pattern.search(text)
+    if not m:
+        return None
+    return m.group(0).strip()
+
+
+def _extract_location(text: str | None) -> str | None:
+    if not text:
+        return None
+    m = LOCATION_HINT_RE.search(text)
+    if m:
+        return m.group(0)
+    return None
+
+
+def _description(markdown: str | None, html: str | None) -> str | None:
+    source = markdown or html
+    if not source:
+        return None
+    cleaned = re.sub(r"\s+", " ", source).strip()
+    if not cleaned:
+        return None
+    return cleaned[:1200]
+
+
+def _page_kind(url: str, links_count: int, has_price: bool, has_surface: bool, has_rooms: bool, title: str | None) -> str:
+    low = url.lower()
+    title_low = (title or "").lower()
+
+    listing_tokens = ["/buscar", "/alquiler", "/venta", "resultados", "/naves", "/inmobiliaria", "/agencia", "clientid="]
+    detail_tokens = ["/inmueble/", "/ficha", "/detalle", "id-", "/d?"]
+
+    if any(token in low for token in listing_tokens) and links_count >= 5:
+        return "listing"
+
+    if any(token in low for token in detail_tokens):
+        return "detail"
+
+    if has_price and has_surface and has_rooms and links_count <= 12:
+        return "detail"
+
+    if "nave" in title_low and has_price and has_surface and has_rooms:
+        return "detail"
+
+    if links_count >= 20:
+        return "listing"
+
+    return "unknown"
+
+
+def _confidence(fields_present: int, *, page_kind: str, has_price_value: bool, has_location: bool) -> float:
+    score = max(0.1, min(1.0, fields_present / 7))
+    if page_kind != "detail":
+        score = min(score * 0.6, 0.55)
+    if not has_price_value:
+        score -= 0.12
+    if not has_location:
+        score -= 0.08
+    return max(0.1, min(1.0, score))
+
+
+def parse_generic_snapshot(bundle: SnapshotBundle, parser_key: str = "generic") -> ParsedRecord:
+    meta = bundle.meta
+    markdown = bundle.markdown
+    html = bundle.html
+
+    combined_text = "\n".join(part for part in [markdown, html] if part)
+
+    title = _extract_title_from_html(html)
+    price_text = _find_first(PRICE_RE, combined_text)
+    surface_text = _find_first(SURFACE_RE, combined_text)
+    rooms_text = _find_first(ROOMS_RE, combined_text)
+    location_text = _extract_location(combined_text)
+    links = _extract_links(html)
+    desc = _description(markdown, html)
+
+    price_value, price_currency = normalize_price(price_text, combined_text)
+    surface_sqm = normalize_surface_sqm(surface_text, combined_text)
+    rooms_count = normalize_rooms_count(rooms_text, combined_text)
+
+    page_kind = _page_kind(
+        meta.get("url_final", ""),
+        len(links),
+        bool(price_value),
+        bool(surface_sqm),
+        bool(rooms_count),
+        title,
+    )
+
+    fields_present = sum(1 for value in [title, price_text, location_text, surface_text, rooms_text, desc] if value)
+
+    if page_kind == "detail":
+        if fields_present >= 3 and price_value is not None:
+            parse_status = "ok"
+        elif fields_present >= 1:
+            parse_status = "partial"
+        else:
+            parse_status = "error"
+    else:
+        if fields_present >= 3:
+            parse_status = "partial"
+        else:
+            parse_status = "error"
+
+    errors: list[str] = []
+    if not (html or markdown):
+        errors.append("missing_html_and_markdown")
+    if page_kind != "detail":
+        errors.append("non_detail_page_kind")
+
+    return ParsedRecord(
+        parser_key=parser_key,
+        source_domain=meta.get("domain", "unknown-domain"),
+        snapshot_id=meta.get("snapshot_id", ""),
+        run_id=meta.get("run_id", ""),
+        snapshot_path=meta.get("snapshot_path", str(bundle.snapshot_path)),
+        url_original=meta.get("url_original", ""),
+        url_final=meta.get("url_final", ""),
+        page_kind=page_kind,
+        title=title,
+        price_text=price_text,
+        price_value=price_value,
+        price_currency=price_currency,
+        location_text=location_text,
+        surface_text=surface_text,
+        surface_sqm=surface_sqm,
+        rooms_text=rooms_text,
+        rooms_count=rooms_count,
+        description_text=desc,
+        extracted_links=links,
+        extracted_at=now_utc_iso(),
+        parse_status=parse_status,
+        parse_errors=errors,
+        confidence_score=round(
+            _confidence(
+                fields_present,
+                page_kind=page_kind,
+                has_price_value=price_value is not None,
+                has_location=bool(location_text),
+            ),
+            2,
+        ),
+    )

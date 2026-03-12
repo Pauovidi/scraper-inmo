@@ -1,5 +1,17 @@
 # AGENTS Instructions
 
+## Non-interactive execution policy
+
+Work in non-interactive mode by default.
+
+- Do not ask for confirmation before editing files.
+- Do not ask for confirmation before running commands, tests, validations, or builds.
+- Do not ask for intermediate review.
+- Prefer executing, validating, fixing, and continuing autonomously.
+- Only stop when an external missing input is truly blocking or when an action would be destructive and irreversible on real data/secrets.
+- For normal implementation ambiguity, choose the most reasonable technical option and proceed.
+- Always finish by reporting modified files, commands run, working flow, remaining limitations, commit hash, branch, and push status.
+
 ## Working Mode
 - Work with full autonomy by default.
 - Do not request confirmation for file edits, command runs, or local validations.

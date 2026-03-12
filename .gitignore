@@ -53,3 +53,26 @@ data/logs/*
 # Global index runtime file
 data/index/*
 !data/index/.gitkeep
+
+# Job runs runtime files
+data/job_runs/*
+!data/job_runs/.gitkeep
+
+# Parsed outputs runtime files
+data/parsed/*
+!data/parsed/.gitkeep
+
+# Discovery outputs runtime files
+data/discovered/*
+!data/discovered/.gitkeep
+
+
+# Export outputs runtime files
+data/exports/*
+!data/exports/.gitkeep
+
+
+# Pipeline run runtime files
+data/pipeline_runs/*
+!data/pipeline_runs/.gitkeep
+

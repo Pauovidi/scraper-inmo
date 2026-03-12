@@ -8,6 +8,8 @@
   "rate_limit_seconds": 2,
   "login_allowed": false,
   "archiver_enabled": true,
-  "parser_key": "generic_listing",
-  "notes": "Configuración base para futuros parsers por portal."
+  "parser_key": "fotocasa_detail",
+  "notes": "Configuración base para futuros parsers por portal.",
+  "timeout_seconds": 20
 }
+
