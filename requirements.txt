@@ -4,3 +4,5 @@ lxml
 markdownify
 python-slugify
 PyYAML
+pandas
+streamlit

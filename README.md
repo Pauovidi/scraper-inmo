@@ -128,6 +128,38 @@ Columnas:
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
+## Visor local (Streamlit)
+Instalacion:
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+Arranque:
+
+```powershell
+streamlit run app/streamlit_app.py
+```
+
+Que muestra:
+- Jobs detectados desde `data/pipeline_runs/`
+- Pipeline runs disponibles por job
+- Resumen del pipeline seleccionado
+- Metricas rapidas de discovery, archive, parse y export
+- Preview de `properties.csv` con fallback a `properties.jsonl`
+- JSONs de `manifest`, `discovery summary`, `archive_summary` y `parse summary`
+- Descarga directa de `properties.csv` y `properties.jsonl` cuando existan
+
+Filtros del visor:
+- `source_domain`
+- `parse_status`
+- busqueda simple de texto sobre el dataset exportado
+
+Limitaciones:
+- Es un visor local de lectura; no despliega nada ni sustituye la CLI
+- Si faltan outputs de una ejecucion concreta, la app muestra aviso y sigue funcionando
+- La calidad de lo mostrado depende de los outputs ya generados por el pipeline
+
 ## Limitaciones actuales
 - Parsers específicos aún heurísticos (no parser completo por portal).
 - No hay crawling profundo ni anti-bot avanzado.

@@ -36,6 +36,8 @@ Thumbs.db
 Desktop.ini
 .vscode/
 .idea/
+.codex/
+.streamlit/
 
 # Data outputs (keep folder structure)
 data/raw/*
