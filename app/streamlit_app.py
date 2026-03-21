@@ -12,7 +12,22 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.utils.paths import pipeline_runs_dir
+from src.publish import (
+    PORTAL_LABELS,
+    PORTAL_ORDER,
+    list_published_dates,
+    load_master_records,
+    load_published_summary,
+    set_listing_status,
+)
+from src.utils.paths import history_dir, published_dir
+
+STATUS_LABELS = {
+    "pending": "Pendiente",
+    "processed": "Procesado",
+    "discarded": "Descartado",
+}
+STATUS_BY_LABEL = {label: key for key, label in STATUS_LABELS.items()}
 
 
 def _read_json(path: Path | None) -> dict[str, Any] | None:
@@ -24,149 +39,222 @@ def _read_json(path: Path | None) -> dict[str, Any] | None:
         return None
 
 
-def _read_jsonl_records(path: Path | None) -> list[dict[str, Any]]:
-    if not path or not path.exists() or not path.is_file():
-        return []
+def _empty_master_dataframe() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "portal",
+            "source_domain",
+            "listing_key",
+            "url_final",
+            "title",
+            "price_text",
+            "price_value",
+            "location_text",
+            "surface_sqm",
+            "rooms_count",
+            "first_seen_date",
+            "last_seen_date",
+            "seen_count",
+            "workflow_status",
+            "workflow_updated_at",
+            "workflow_note",
+            "parser_key",
+            "parse_status",
+        ]
+    )
 
-    records: list[dict[str, Any]] = []
+
+def _load_master_dataframe() -> pd.DataFrame:
+    records = load_master_records()
+    if not records:
+        return _empty_master_dataframe()
+
+    dataframe = pd.DataFrame(records)
+    for column in _empty_master_dataframe().columns:
+        if column not in dataframe.columns:
+            dataframe[column] = None
+    return dataframe
+
+
+def _published_day_dir(publish_date: str) -> Path:
+    return published_dir() / publish_date
+
+
+def _load_published_dataframe(publish_date: str, portal: str) -> pd.DataFrame:
+    csv_path = _published_day_dir(publish_date) / f"{portal}.csv"
+    if not csv_path.exists():
+        return pd.DataFrame()
     try:
-        with path.open("r", encoding="utf-8") as handle:
-            for raw in handle:
-                line = raw.strip()
-                if not line:
-                    continue
-                try:
-                    value = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(value, dict):
-                    records.append(value)
-    except OSError:
-        return []
-    return records
+        return pd.read_csv(csv_path)
+    except Exception:
+        return pd.DataFrame()
 
 
-def _path_from_value(value: Any) -> Path | None:
-    if not value:
-        return None
-    try:
-        return Path(str(value))
-    except (TypeError, ValueError):
-        return None
+def _merge_master_data(published_df: pd.DataFrame, master_df: pd.DataFrame) -> pd.DataFrame:
+    if published_df.empty:
+        return published_df.copy()
+    if master_df.empty or "listing_key" not in published_df.columns:
+        return published_df.copy()
+
+    master_fields = [
+        "listing_key",
+        "workflow_status",
+        "workflow_updated_at",
+        "workflow_note",
+        "first_seen_date",
+        "last_seen_date",
+        "seen_count",
+        "title",
+        "price_text",
+        "price_value",
+        "location_text",
+        "surface_sqm",
+        "rooms_count",
+        "url_final",
+        "parse_status",
+    ]
+    master_subset = master_df[[field for field in master_fields if field in master_df.columns]].copy()
+    master_subset = master_subset.drop_duplicates(subset=["listing_key"], keep="last")
+    merged = published_df.merge(master_subset, on="listing_key", how="left", suffixes=("", "_master"))
+
+    for column in master_subset.columns:
+        if column == "listing_key":
+            continue
+        master_column = f"{column}_master"
+        if master_column in merged.columns:
+            if column in merged.columns:
+                merged[column] = merged[master_column].where(merged[master_column].notna(), merged[column])
+            else:
+                merged[column] = merged[master_column]
+            merged = merged.drop(columns=[master_column])
+    return merged
 
 
-def list_jobs() -> list[str]:
-    root = pipeline_runs_dir()
-    if not root.exists():
-        return []
-    return sorted([entry.name for entry in root.iterdir() if entry.is_dir()])
+def _prepare_view_dataframe(dataframe: pd.DataFrame, include_portal: bool) -> pd.DataFrame:
+    if dataframe.empty:
+        return pd.DataFrame()
+
+    working = dataframe.copy()
+    working["workflow_status"] = working["workflow_status"].fillna("pending")
+    working["price_text"] = working["price_text"].fillna("")
+    working["location_text"] = working["location_text"].fillna("")
+    working["surface_sqm"] = working["surface_sqm"].fillna("")
+    working["rooms_count"] = working["rooms_count"].fillna("")
+    working["url_final"] = working["url_final"].fillna("")
+    working["first_seen_date"] = working["first_seen_date"].fillna("")
+    working["last_seen_date"] = working["last_seen_date"].fillna("")
+    working["seen_count"] = working["seen_count"].fillna(0)
+
+    working["Estado"] = working["workflow_status"].map(STATUS_LABELS).fillna("Pendiente")
+    working["Título"] = working["title"].fillna("")
+    working["Precio"] = working["price_text"].fillna("")
+    working["Ubicación"] = working["location_text"].fillna("")
+    working["Superficie"] = working["surface_sqm"].apply(lambda value: f"{value} m²" if value not in {"", None} and pd.notna(value) else "")
+    working["Habitaciones"] = working["rooms_count"].apply(lambda value: int(value) if str(value) not in {"", "nan"} else "")
+    working["Enlace"] = working["url_final"].fillna("")
+    working["Primera detección"] = working["first_seen_date"].fillna("")
+    working["Última detección"] = working["last_seen_date"].fillna("")
+    working["Veces visto"] = working["seen_count"].fillna(0).astype(int)
+    working["Portal"] = working["portal"].fillna("").apply(lambda value: PORTAL_LABELS.get(str(value), str(value).title()))
+
+    columns = [
+        "listing_key",
+        "Estado",
+        "Título",
+        "Precio",
+        "Ubicación",
+        "Superficie",
+        "Habitaciones",
+        "Enlace",
+        "Primera detección",
+        "Última detección",
+    ]
+    if include_portal:
+        columns.insert(1, "Portal")
+        columns.append("Veces visto")
+
+    return working[columns].set_index("listing_key")
 
 
-def list_pipeline_run_ids(job_name: str) -> list[str]:
-    job_dir = pipeline_runs_dir() / job_name
-    if not job_dir.exists():
-        return []
+def _render_status_editor(dataframe: pd.DataFrame, *, key_prefix: str, include_portal: bool = False) -> None:
+    if dataframe.empty:
+        st.info("No hay anuncios para mostrar.")
+        return
 
-    runs = [entry.name for entry in job_dir.iterdir() if entry.is_dir()]
-    return sorted(runs, reverse=True)
+    view_df = _prepare_view_dataframe(dataframe, include_portal=include_portal)
+    disabled_columns = [
+        column
+        for column in [
+            "Portal",
+            "Título",
+            "Precio",
+            "Ubicación",
+            "Superficie",
+            "Habitaciones",
+            "Enlace",
+            "Primera detección",
+            "Última detección",
+            "Veces visto",
+        ]
+        if column in view_df.columns
+    ]
+    edited_df = st.data_editor(
+        view_df,
+        width="stretch",
+        hide_index=True,
+        key=f"editor_{key_prefix}",
+        column_config={
+            "Estado": st.column_config.SelectboxColumn(
+                "Estado",
+                options=list(STATUS_BY_LABEL.keys()),
+                required=True,
+            ),
+            "Enlace": st.column_config.LinkColumn("Enlace", display_text="Abrir anuncio"),
+        },
+        disabled=disabled_columns,
+    )
 
+    if st.button("Guardar estados", key=f"save_{key_prefix}"):
+        changes = 0
+        for listing_key in edited_df.index:
+            original_status = str(view_df.loc[listing_key, "Estado"])
+            edited_status = str(edited_df.loc[listing_key, "Estado"])
+            if original_status == edited_status:
+                continue
+            set_listing_status(
+                listing_key=str(listing_key),
+                status=STATUS_BY_LABEL[edited_status],
+            )
+            changes += 1
 
-def _manifest_path(job_name: str, pipeline_run_id: str) -> Path:
-    return pipeline_runs_dir() / job_name / pipeline_run_id / "manifest.json"
-
-
-def _resolve_output_paths(job_name: str, pipeline_run_id: str, manifest: dict[str, Any]) -> dict[str, Path | None]:
-    export_paths = manifest.get("export_paths", {}) or {}
-    output_paths = manifest.get("output_paths", {}) or {}
-    job_run_id = str(manifest.get("output_job_run_id") or manifest.get("job_run_id") or "")
-
-    discovered_dir = REPO_ROOT / "data" / "discovered" / "job_runs" / job_name / job_run_id
-    parsed_dir = REPO_ROOT / "data" / "parsed" / "discovered" / job_name / job_run_id
-    exports_dir = REPO_ROOT / "data" / "exports" / job_name / job_run_id
-
-    return {
-        "manifest": _manifest_path(job_name, pipeline_run_id),
-        "discovery_summary": _path_from_value(manifest.get("discovery_summary_path")) or discovered_dir / "summary.json",
-        "archive_summary": _path_from_value(manifest.get("archive_discovered_summary_path")) or discovered_dir / "archive_summary.json",
-        "parse_summary": _path_from_value(manifest.get("parse_discovered_summary_path")) or parsed_dir / "summary.json",
-        "properties_csv": _path_from_value(export_paths.get("csv")) or _path_from_value(output_paths.get("export_csv_path")) or exports_dir / "properties.csv",
-        "properties_jsonl": _path_from_value(export_paths.get("jsonl")) or _path_from_value(output_paths.get("export_jsonl_path")) or exports_dir / "properties.jsonl",
-        "job_manifest": _path_from_value(manifest.get("job_manifest_path")),
-    }
-
-
-def load_pipeline_context(job_name: str, pipeline_run_id: str) -> dict[str, Any]:
-    manifest_path = _manifest_path(job_name, pipeline_run_id)
-    manifest = _read_json(manifest_path)
-    if manifest is None:
-        return {
-            "manifest": None,
-            "paths": {
-                "manifest": manifest_path,
-            },
-            "discovery_summary": None,
-            "archive_summary": None,
-            "parse_summary": None,
-            "dataframe": pd.DataFrame(),
-            "export_source": None,
-            "warnings": [f"No se pudo leer el manifest: {manifest_path}"],
-        }
-
-    paths = _resolve_output_paths(job_name=job_name, pipeline_run_id=pipeline_run_id, manifest=manifest)
-    discovery_summary = _read_json(paths["discovery_summary"])
-    archive_summary = _read_json(paths["archive_summary"])
-    parse_summary = _read_json(paths["parse_summary"])
-
-    dataframe = pd.DataFrame()
-    export_source: str | None = None
-    warnings: list[str] = []
-
-    csv_path = paths["properties_csv"]
-    jsonl_path = paths["properties_jsonl"]
-
-    if csv_path and csv_path.exists():
-        try:
-            dataframe = pd.read_csv(csv_path)
-            export_source = "csv"
-        except Exception as exc:  # pragma: no cover
-            warnings.append(f"No se pudo leer el CSV: {csv_path} ({type(exc).__name__})")
-
-    if dataframe.empty and jsonl_path and jsonl_path.exists():
-        records = _read_jsonl_records(jsonl_path)
-        if records:
-            dataframe = pd.DataFrame(records)
-            export_source = "jsonl"
+        if changes:
+            st.success(f"Se guardaron {changes} cambio(s).")
+            st.rerun()
         else:
-            warnings.append(f"El JSONL esta vacio o no se pudo leer: {jsonl_path}")
-
-    if dataframe.empty and export_source is None:
-        warnings.append("No hay export disponible para esta ejecucion.")
-
-    return {
-        "manifest": manifest,
-        "paths": paths,
-        "discovery_summary": discovery_summary,
-        "archive_summary": archive_summary,
-        "parse_summary": parse_summary,
-        "dataframe": dataframe,
-        "export_source": export_source,
-        "warnings": warnings,
-    }
+            st.info("No había cambios para guardar.")
 
 
-def _apply_filters(
+def _apply_history_filters(
     dataframe: pd.DataFrame,
-    source_domain: str,
-    parse_status: str,
+    *,
+    portal_filter: str,
+    status_filter: str,
+    date_filter: str,
     search_text: str,
 ) -> pd.DataFrame:
     filtered = dataframe.copy()
 
-    if source_domain != "Todos" and "source_domain" in filtered.columns:
-        filtered = filtered[filtered["source_domain"].fillna("") == source_domain]
+    if portal_filter != "Todos" and "portal" in filtered.columns:
+        filtered = filtered[filtered["portal"].fillna("") == portal_filter]
 
-    if parse_status != "Todos" and "parse_status" in filtered.columns:
-        filtered = filtered[filtered["parse_status"].fillna("") == parse_status]
+    if status_filter != "Todos" and "workflow_status" in filtered.columns:
+        filtered = filtered[filtered["workflow_status"].fillna("") == status_filter]
+
+    if date_filter != "Todas":
+        filtered = filtered[
+            (filtered["first_seen_date"].fillna("") == date_filter)
+            | (filtered["last_seen_date"].fillna("") == date_filter)
+        ]
 
     query = search_text.strip()
     if query and not filtered.empty:
@@ -179,146 +267,114 @@ def _apply_filters(
     return filtered
 
 
-def _status_metric(discovery_summary: dict[str, Any] | None, archive_summary: dict[str, Any] | None, parse_summary: dict[str, Any] | None, dataframe: pd.DataFrame) -> None:
-    discovered = discovery_summary.get("discovered_urls_count", 0) if discovery_summary else 0
-    archive_ok = archive_summary.get("ok_count", 0) if archive_summary else 0
-    archive_partial = archive_summary.get("partial_count", 0) if archive_summary else 0
-    archive_error = archive_summary.get("error_count", 0) if archive_summary else 0
-    parsed = parse_summary.get("parsed_count", 0) if parse_summary else 0
-    detail = parse_summary.get("detail_count", 0) if parse_summary else 0
-    parse_error = parse_summary.get("error_count", 0) if parse_summary else 0
-
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Discovered URLs", discovered)
-    col2.metric("Archive OK / Partial / Error", f"{archive_ok} / {archive_partial} / {archive_error}")
-    col3.metric("Parse Parsed / Detail / Error", f"{parsed} / {detail} / {parse_error}")
-    col4.metric("Filas exportadas", int(len(dataframe.index)))
-
-
-def _show_paths(paths: dict[str, Path | None]) -> None:
-    st.subheader("Rutas")
-    for label, path in paths.items():
-        st.text_input(label, value=str(path) if path else "", disabled=True)
-
-
-def _show_json_block(title: str, payload: dict[str, Any] | None, path: Path | None) -> None:
-    st.markdown(f"**{title}**")
-    if payload is None:
-        st.warning(f"Archivo ausente o no legible: {path}")
-        return
-    st.json(payload)
-
-
 def render() -> None:
-    st.set_page_config(page_title="Scraper Results Viewer", layout="wide")
-    st.title("Visor local de resultados")
-    st.caption(f"Repositorio: {REPO_ROOT}")
+    st.set_page_config(page_title="Panel de anuncios", layout="wide")
+    st.title("Panel de anuncios")
+    st.caption("Visor local v2 orientado a cliente")
 
-    if st.button("Refresh"):
+    if st.button("Actualizar vista"):
         st.rerun()
 
-    jobs = list_jobs()
-    if not jobs:
-        st.warning("No se detectaron jobs en data/pipeline_runs.")
+    published_dates = list_published_dates()
+    if not published_dates:
+        st.warning("Todavía no hay publicaciones diarias. Ejecuta `python -m src.main publish-daily --job bizkaia_naves_smoke`.")
         st.stop()
 
     with st.sidebar:
-        st.header("Seleccion")
-        selected_job = st.selectbox("Job", jobs)
-        run_ids = list_pipeline_run_ids(selected_job)
-        if not run_ids:
-            st.warning("No hay pipeline runs para el job seleccionado.")
-            st.stop()
-        selected_run = st.selectbox("Pipeline run", run_ids)
+        st.header("Vista")
+        selected_date = st.selectbox("Fecha publicada", published_dates)
 
-    context = load_pipeline_context(job_name=selected_job, pipeline_run_id=selected_run)
-    manifest = context["manifest"]
-    dataframe = context["dataframe"]
+    summary = load_published_summary(selected_date) or {}
+    if not summary:
+        st.warning("No se encontró el resumen diario. Se mostrarán los datos disponibles sin métricas consolidadas.")
+    master_df = _load_master_dataframe()
+    today_all_df = _load_published_dataframe(selected_date, "all")
+    today_all_df = _merge_master_data(today_all_df, master_df)
 
-    for warning in context["warnings"]:
-        st.warning(warning)
+    total_pending = int((master_df["workflow_status"].fillna("pending") == "pending").sum()) if not master_df.empty else 0
+    portal_counts = summary.get("portal_counts", {}) if isinstance(summary, dict) else {}
 
-    if manifest is None:
-        st.stop()
-
-    summary_col1, summary_col2, summary_col3, summary_col4 = st.columns(4)
-    summary_col1.metric("Pipeline run", str(manifest.get("pipeline_run_id", selected_run)))
-    summary_col2.metric("Job run", str(manifest.get("job_run_id", "")))
-    summary_col3.metric("Status", str(manifest.get("status", "unknown")))
-    summary_col4.metric("Export source", context["export_source"] or "none")
+    metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+    metric_col1.metric("Actualización", selected_date)
+    metric_col2.metric("Nuevos hoy", int(summary.get("new_listings_count", len(today_all_df.index)) or 0))
+    metric_col3.metric("Histórico total", int(summary.get("history_total_count", len(master_df.index)) or 0))
+    metric_col4.metric("Pendientes", total_pending)
 
     st.caption(
-        f"Inicio: {manifest.get('timestamp_utc_start', '-')}"
-        f" | Fin: {manifest.get('timestamp_utc_end', '-')}"
+        f"Última actualización: {summary.get('published_at', 'sin dato')}"
+        f" | Job: {summary.get('job_name', 'sin dato')}"
     )
 
-    _status_metric(
-        discovery_summary=context["discovery_summary"],
-        archive_summary=context["archive_summary"],
-        parse_summary=context["parse_summary"],
-        dataframe=dataframe,
-    )
+    portal_metric_cols = st.columns(len(PORTAL_ORDER))
+    for idx, portal in enumerate(PORTAL_ORDER):
+        portal_metric_cols[idx].metric(PORTAL_LABELS[portal], int(portal_counts.get(portal, 0) or 0))
 
-    with st.expander("Ver rutas relevantes", expanded=False):
-        _show_paths(context["paths"])
+    tabs = st.tabs([PORTAL_LABELS[portal] for portal in PORTAL_ORDER] + ["Histórico", "Técnico"])
 
-    tab_data, tab_json = st.tabs(["Datos", "JSON"])
+    for index, portal in enumerate(PORTAL_ORDER):
+        with tabs[index]:
+            portal_df = _load_published_dataframe(selected_date, portal)
+            portal_df = _merge_master_data(portal_df, master_df)
+            st.subheader(f"{PORTAL_LABELS[portal]}: nuevos de hoy")
+            if portal_df.empty:
+                st.info("Sin anuncios nuevos hoy para este portal.")
+            else:
+                _render_status_editor(portal_df, key_prefix=f"{selected_date}_{portal}")
 
-    with tab_data:
-        download_col1, download_col2 = st.columns(2)
-        csv_path = context["paths"].get("properties_csv")
-        jsonl_path = context["paths"].get("properties_jsonl")
-
-        if csv_path and csv_path.exists():
-            download_col1.download_button(
-                "Descargar properties.csv",
-                data=csv_path.read_bytes(),
-                file_name=csv_path.name,
-                mime="text/csv",
+    with tabs[len(PORTAL_ORDER)]:
+        st.subheader("Histórico")
+        if master_df.empty:
+            st.info("No hay histórico disponible todavía.")
+        else:
+            filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+            portal_filter = filter_col1.selectbox(
+                "Portal",
+                ["Todos"] + PORTAL_ORDER,
+                format_func=lambda value: "Todos" if value == "Todos" else PORTAL_LABELS.get(value, value.title()),
             )
-        else:
-            download_col1.info("properties.csv no disponible")
-
-        if jsonl_path and jsonl_path.exists():
-            download_col2.download_button(
-                "Descargar properties.jsonl",
-                data=jsonl_path.read_bytes(),
-                file_name=jsonl_path.name,
-                mime="application/json",
+            status_filter = filter_col2.selectbox(
+                "Estado",
+                ["Todos", "pending", "processed", "discarded"],
+                format_func=lambda value: "Todos" if value == "Todos" else STATUS_LABELS.get(value, value),
             )
-        else:
-            download_col2.info("properties.jsonl no disponible")
+            known_dates = sorted(
+                {
+                    str(value)
+                    for value in pd.concat(
+                        [
+                            master_df["first_seen_date"].dropna().astype(str),
+                            master_df["last_seen_date"].dropna().astype(str),
+                        ]
+                    ).tolist()
+                    if value
+                },
+                reverse=True,
+            )
+            date_filter = filter_col3.selectbox("Fecha", ["Todas"] + known_dates)
+            search_text = filter_col4.text_input("Búsqueda")
 
-        filter_col1, filter_col2, filter_col3 = st.columns(3)
-        source_options = ["Todos"]
-        if "source_domain" in dataframe.columns:
-            source_options.extend(sorted(value for value in dataframe["source_domain"].dropna().astype(str).unique()))
-        status_options = ["Todos"]
-        if "parse_status" in dataframe.columns:
-            status_options.extend(sorted(value for value in dataframe["parse_status"].dropna().astype(str).unique()))
+            filtered_history = _apply_history_filters(
+                master_df,
+                portal_filter=portal_filter,
+                status_filter=status_filter,
+                date_filter=date_filter,
+                search_text=search_text,
+            )
+            st.caption(f"Mostrando {len(filtered_history.index)} anuncio(s)")
+            _render_status_editor(filtered_history, key_prefix=f"history_{selected_date}", include_portal=True)
 
-        selected_source = filter_col1.selectbox("Filtrar source_domain", source_options)
-        selected_status = filter_col2.selectbox("Filtrar parse_status", status_options)
-        search_text = filter_col3.text_input("Busqueda simple")
+    with tabs[len(PORTAL_ORDER) + 1]:
+        st.subheader("Técnico")
+        st.text_input("Ruta histórico maestro", value=str(history_dir() / "listings_master.jsonl"), disabled=True)
+        st.text_input("Ruta estados", value=str(history_dir() / "listing_status.jsonl"), disabled=True)
+        st.text_input("Ruta summary", value=str(_published_day_dir(selected_date) / "summary.json"), disabled=True)
+        st.json(summary)
 
-        filtered = _apply_filters(
-            dataframe=dataframe,
-            source_domain=selected_source,
-            parse_status=selected_status,
-            search_text=search_text,
-        )
-
-        st.caption(f"Mostrando {len(filtered.index)} fila(s)")
-        if filtered.empty:
-            st.info("No hay filas para los filtros actuales.")
-        else:
-            st.dataframe(filtered, width="stretch", hide_index=True)
-
-    with tab_json:
-        _show_json_block("Manifest global del pipeline", manifest, context["paths"].get("manifest"))
-        _show_json_block("Discovery summary", context["discovery_summary"], context["paths"].get("discovery_summary"))
-        _show_json_block("Archive summary", context["archive_summary"], context["paths"].get("archive_summary"))
-        _show_json_block("Parse summary", context["parse_summary"], context["paths"].get("parse_summary"))
+        manifest_path = Path(str(summary.get("source_manifest_path", ""))) if summary.get("source_manifest_path") else None
+        manifest_payload = _read_json(manifest_path)
+        if manifest_payload is not None:
+            st.markdown("**Manifest del pipeline origen**")
+            st.json(manifest_payload)
 
 
 if __name__ == "__main__":
