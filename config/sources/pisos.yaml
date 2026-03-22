@@ -3,7 +3,10 @@
   "enabled": true,
   "mode": "seed_only",
   "start_urls": [
-    "https://www.pisos.com/alquiler/naves-vizcaya_bizkaia/"
+    "https://www.pisos.com/alquiler/naves-vizcaya_bizkaia/",
+    "https://www.pisos.com/alquiler/naves-bilbao/",
+    "https://www.pisos.com/alquiler/naves-barakaldo/",
+    "https://www.pisos.com/alquiler/naves-basauri/"
   ],
   "rate_limit_seconds": 2,
   "login_allowed": false,
@@ -11,16 +14,17 @@
   "harvest_enabled": true,
   "parser_key": "pisos_detail",
   "listing_start_urls": [
-    "https://www.pisos.com/alquiler/naves-vizcaya_bizkaia/"
+    "https://www.pisos.com/alquiler/naves-vizcaya_bizkaia/",
+    "https://www.pisos.com/alquiler/naves-bilbao/",
+    "https://www.pisos.com/alquiler/naves-barakaldo/",
+    "https://www.pisos.com/alquiler/naves-basauri/"
   ],
   "max_listing_pages": 4,
   "listing_page_start": 1,
   "listing_page_url_template": "{base}{page}/",
   "listing_first_page_uses_start_url": true,
   "listing_card_selectors": [
-    "a.ad-preview__title[href]",
-    "[class*='ad-preview']",
-    "[class*='property']"
+    "a.ad-preview__title[href]"
   ],
   "listing_detail_url_patterns": [
     "/alquilar/[^/]+/\\d+(?:_[^/]+)?/?$",
@@ -36,6 +40,6 @@
     "/mapa",
     "/obra-nueva"
   ],
-  "notes": "Seed provincial real de Bizkaia con paginación por path para recuperar volumen útil desde listados.",
+  "notes": "Seed provincial y de subzonas de Bizkaia con paginacion por path para recuperar volumen util desde listados.",
   "timeout_seconds": 20
 }

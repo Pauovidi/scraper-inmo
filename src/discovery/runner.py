@@ -146,10 +146,19 @@ def archive_discovered(
             "snapshot_path": None,
         }
         try:
-            result = archive_url(url=url, timeout=20)
+            listing_page_url = str(discovered_row.get("listing_page_url") or "").strip()
+            request_headers = {"Referer": listing_page_url} if listing_page_url else None
+            result = archive_url(
+                url=url,
+                timeout=20,
+                request_headers=request_headers,
+                session_warmup_url=listing_page_url or None,
+            )
             archived_snapshot_paths.append(str(result.output_dir))
             result_row["status"] = result.status
             result_row["snapshot_path"] = str(result.output_dir)
+            if listing_page_url:
+                result_row["listing_page_url"] = listing_page_url
             if result.status == "ok":
                 ok_count += 1
             elif result.status == "partial":

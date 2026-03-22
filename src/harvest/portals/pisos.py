@@ -5,6 +5,13 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 from src.harvest.portals import PortalStrategy
 
+PISOS_LISTING_START_URLS = [
+    "https://www.pisos.com/alquiler/naves-vizcaya_bizkaia/",
+    "https://www.pisos.com/alquiler/naves-bilbao/",
+    "https://www.pisos.com/alquiler/naves-barakaldo/",
+    "https://www.pisos.com/alquiler/naves-basauri/",
+]
+
 PISOS_DETAIL_PATTERNS = [
     r"/alquilar/[^/]+/\d+(?:_[^/]+)?/?$",
     r"/alquilar/[^/]*-\d+(?:_[^/]+)?/?$",
@@ -58,21 +65,22 @@ def pisos_is_detail_candidate_url(url: str) -> bool:
     return any(re.search(pattern, low) for pattern in PISOS_DETAIL_PATTERNS)
 
 
+def pisos_listing_start_urls() -> list[str]:
+    return list(PISOS_LISTING_START_URLS)
+
+
 PISOS_STRATEGY = PortalStrategy(
     source_domain="pisos.com",
     card_selectors=(
         "a.ad-preview__title[href]",
-        "[class*='ad-preview']",
     ),
     detail_link_selectors=(
         "a.ad-preview__title[href]",
-        "a[href*='/alquilar/']",
-        "a[href*='/inmueble/']",
     ),
     detail_patterns=tuple(PISOS_DETAIL_PATTERNS),
     reject_patterns=tuple(PISOS_REJECT_PATTERNS),
     query_drop_keys=PISOS_QUERY_DROP_KEYS,
-    listing_start_urls=("https://www.pisos.com/alquiler/naves-vizcaya_bizkaia/",),
+    listing_start_urls=tuple(PISOS_LISTING_START_URLS),
     max_listing_pages=4,
     listing_page_url_template="{base}{page}/",
     normalize_candidate_url_fn=pisos_normalize_candidate_url,

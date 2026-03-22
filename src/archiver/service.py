@@ -41,6 +41,17 @@ DEFAULT_USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/122.0.0.0 Safari/537.36"
 )
+DEFAULT_REQUEST_HEADERS = {
+    "User-Agent": DEFAULT_USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Dest": "document",
+}
 
 
 @dataclass
@@ -125,15 +136,38 @@ def _read_file_url(file_url: str) -> tuple[str, str, str | None]:
     return file_url, html, "text/html"
 
 
-def _fetch_html_requests(url: str, timeout: int) -> tuple[str, str, str | None]:
-    response = requests.get(url, headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=timeout)
+def _request_headers(extra_headers: dict[str, str] | None = None) -> dict[str, str]:
+    headers = dict(DEFAULT_REQUEST_HEADERS)
+    if extra_headers:
+        headers.update({key: value for key, value in extra_headers.items() if value})
+    return headers
+
+
+def _fetch_html_requests(
+    url: str,
+    timeout: int,
+    *,
+    request_headers: dict[str, str] | None = None,
+    session_warmup_url: str | None = None,
+) -> tuple[str, str, str | None]:
+    headers = _request_headers(request_headers)
+    session = requests.Session()
+    session.headers.update(headers)
+
+    if session_warmup_url:
+        try:
+            session.get(session_warmup_url, timeout=timeout)
+        except Exception:
+            pass
+
+    response = session.get(url, timeout=timeout)
     response.raise_for_status()
     response.encoding = response.encoding or response.apparent_encoding or "utf-8"
     return response.url, response.text, response.headers.get("Content-Type")
 
 
-def _fetch_html_urllib(url: str, timeout: int) -> tuple[str, str, str | None]:
-    request = Request(url, headers={"User-Agent": DEFAULT_USER_AGENT})
+def _fetch_html_urllib(url: str, timeout: int, *, request_headers: dict[str, str] | None = None) -> tuple[str, str, str | None]:
+    request = Request(url, headers=_request_headers(request_headers))
     with urlopen(request, timeout=timeout) as response:
         final_url = response.geturl()
         content_type = response.headers.get("Content-Type")
@@ -245,6 +279,8 @@ def archive_url(
     source_domain_override: str | None = None,
     slug_hint: str | None = None,
     extra_meta: dict[str, Any] | None = None,
+    request_headers: dict[str, str] | None = None,
+    session_warmup_url: str | None = None,
 ) -> ArchiveResult:
     logger = get_logger("archiver")
     start = time.perf_counter()
@@ -288,23 +324,28 @@ def archive_url(
             if requests is not None:
                 methods_attempted.append("html_requests")
                 try:
-                    final_url, html, content_type = _fetch_html_requests(url=url, timeout=timeout)
+                    final_url, html, content_type = _fetch_html_requests(
+                        url=url,
+                        timeout=timeout,
+                        request_headers=request_headers,
+                        session_warmup_url=session_warmup_url,
+                    )
                     methods_succeeded.append("html_requests")
                     html_source = "requests"
                 except Exception as req_exc:
                     errors.append(f"html_requests_error: {type(req_exc).__name__}: {req_exc}")
                     methods_attempted.append("html_urllib")
-                    final_url, html, content_type = _fetch_html_urllib(url=url, timeout=timeout)
+                    final_url, html, content_type = _fetch_html_urllib(url=url, timeout=timeout, request_headers=request_headers)
                     methods_succeeded.append("html_urllib")
                     html_source = "urllib"
             else:
                 methods_attempted.append("html_urllib")
-                final_url, html, content_type = _fetch_html_urllib(url=url, timeout=timeout)
+                final_url, html, content_type = _fetch_html_urllib(url=url, timeout=timeout, request_headers=request_headers)
                 methods_succeeded.append("html_urllib")
                 html_source = "urllib"
         else:
             methods_attempted.append("html_urllib")
-            final_url, html, content_type = _fetch_html_urllib(url=url, timeout=timeout)
+            final_url, html, content_type = _fetch_html_urllib(url=url, timeout=timeout, request_headers=request_headers)
             methods_succeeded.append("html_urllib")
             html_source = "urllib"
 

@@ -183,6 +183,12 @@ def _select_cards(soup: BeautifulSoup, strategy: PortalStrategy) -> list[Tag]:
 def _select_card_anchors(card: Tag, strategy: PortalStrategy) -> list[Tag]:
     selected: list[Tag] = []
     seen: set[int] = set()
+
+    if getattr(card, "name", "") == "a" and card.get("href"):
+        identifier = id(card)
+        seen.add(identifier)
+        selected.append(card)
+
     for selector in strategy.detail_link_selectors:
         for anchor in card.select(selector):
             identifier = id(anchor)
