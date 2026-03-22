@@ -12,15 +12,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.publish import (
-    PORTAL_LABELS,
-    PORTAL_ORDER,
-    list_published_dates,
-    load_master_records,
-    load_published_summary,
-    set_listing_status,
-)
+from src.publish import PORTAL_LABELS, PORTAL_ORDER, list_published_dates, load_master_records, load_published_summary, set_listing_status
+from src.publish.client_cleaning import SPAIN_PROVINCES, is_blocked_client_record, normalize_client_record
 from src.utils.paths import history_dir, published_dir
+
+APP_NAME = "Inmoscraper"
+EMPTY_LABEL = "Sin dato"
 
 STATUS_LABELS = {
     "pending": "Pendiente",
@@ -50,6 +47,7 @@ def _empty_master_dataframe() -> pd.DataFrame:
             "price_text",
             "price_value",
             "location_text",
+            "province",
             "surface_sqm",
             "rooms_count",
             "first_seen_date",
@@ -64,16 +62,32 @@ def _empty_master_dataframe() -> pd.DataFrame:
     )
 
 
+def _normalize_client_dataframe(dataframe: pd.DataFrame) -> pd.DataFrame:
+    if dataframe.empty:
+        return _empty_master_dataframe()
+
+    rows: list[dict[str, Any]] = []
+    for record in dataframe.to_dict(orient="records"):
+        normalized = normalize_client_record(record)
+        if is_blocked_client_record(normalized):
+            continue
+        rows.append(normalized)
+
+    if not rows:
+        return _empty_master_dataframe()
+
+    normalized_df = pd.DataFrame(rows)
+    for column in _empty_master_dataframe().columns:
+        if column not in normalized_df.columns:
+            normalized_df[column] = None
+    return normalized_df
+
+
 def _load_master_dataframe() -> pd.DataFrame:
     records = load_master_records()
     if not records:
         return _empty_master_dataframe()
-
-    dataframe = pd.DataFrame(records)
-    for column in _empty_master_dataframe().columns:
-        if column not in dataframe.columns:
-            dataframe[column] = None
-    return dataframe
+    return _normalize_client_dataframe(pd.DataFrame(records))
 
 
 def _published_day_dir(publish_date: str) -> Path:
@@ -85,16 +99,17 @@ def _load_published_dataframe(publish_date: str, portal: str) -> pd.DataFrame:
     if not csv_path.exists():
         return pd.DataFrame()
     try:
-        return pd.read_csv(csv_path)
+        dataframe = pd.read_csv(csv_path)
     except Exception:
         return pd.DataFrame()
+    return _normalize_client_dataframe(dataframe)
 
 
 def _merge_master_data(published_df: pd.DataFrame, master_df: pd.DataFrame) -> pd.DataFrame:
     if published_df.empty:
         return published_df.copy()
     if master_df.empty or "listing_key" not in published_df.columns:
-        return published_df.copy()
+        return _normalize_client_dataframe(published_df)
 
     master_fields = [
         "listing_key",
@@ -108,6 +123,7 @@ def _merge_master_data(published_df: pd.DataFrame, master_df: pd.DataFrame) -> p
         "price_text",
         "price_value",
         "location_text",
+        "province",
         "surface_sqm",
         "rooms_count",
         "url_final",
@@ -127,58 +143,86 @@ def _merge_master_data(published_df: pd.DataFrame, master_df: pd.DataFrame) -> p
             else:
                 merged[column] = merged[master_column]
             merged = merged.drop(columns=[master_column])
-    return merged
+    return _normalize_client_dataframe(merged)
 
 
-def _prepare_view_dataframe(dataframe: pd.DataFrame, include_portal: bool) -> pd.DataFrame:
+def _format_text(value: object | None) -> str:
+    if value is None:
+        return EMPTY_LABEL
+    text = str(value).strip()
+    return text if text else EMPTY_LABEL
+
+
+def _format_surface(value: object | None) -> str:
+    if value in {"", None} or pd.isna(value):
+        return EMPTY_LABEL
+    return f"{value} m²"
+
+
+def _format_rooms(value: object | None) -> str:
+    if value in {"", None} or pd.isna(value):
+        return EMPTY_LABEL
+    try:
+        return str(int(float(value)))
+    except Exception:
+        return _format_text(value)
+
+
+def _sort_client_dataframe(dataframe: pd.DataFrame) -> pd.DataFrame:
+    if dataframe.empty:
+        return dataframe
+    working = dataframe.copy()
+    for field in ["last_seen_date", "first_seen_date", "title", "portal"]:
+        if field not in working.columns:
+            working[field] = ""
+    return working.sort_values(
+        by=["last_seen_date", "first_seen_date", "portal", "title"],
+        ascending=[False, False, True, True],
+        kind="stable",
+    )
+
+
+def _prepare_view_dataframe(dataframe: pd.DataFrame, *, include_portal: bool = True) -> pd.DataFrame:
     if dataframe.empty:
         return pd.DataFrame()
 
-    working = dataframe.copy()
+    working = _sort_client_dataframe(dataframe)
     working["workflow_status"] = working["workflow_status"].fillna("pending")
-    working["price_text"] = working["price_text"].fillna("")
-    working["location_text"] = working["location_text"].fillna("")
-    working["surface_sqm"] = working["surface_sqm"].fillna("")
-    working["rooms_count"] = working["rooms_count"].fillna("")
-    working["url_final"] = working["url_final"].fillna("")
-    working["first_seen_date"] = working["first_seen_date"].fillna("")
-    working["last_seen_date"] = working["last_seen_date"].fillna("")
-    working["seen_count"] = working["seen_count"].fillna(0)
-
     working["Estado"] = working["workflow_status"].map(STATUS_LABELS).fillna("Pendiente")
-    working["Título"] = working["title"].fillna("")
-    working["Precio"] = working["price_text"].fillna("")
-    working["Ubicación"] = working["location_text"].fillna("")
-    working["Superficie"] = working["surface_sqm"].apply(lambda value: f"{value} m²" if value not in {"", None} and pd.notna(value) else "")
-    working["Habitaciones"] = working["rooms_count"].apply(lambda value: int(value) if str(value) not in {"", "nan"} else "")
-    working["Enlace"] = working["url_final"].fillna("")
-    working["Primera detección"] = working["first_seen_date"].fillna("")
-    working["Última detección"] = working["last_seen_date"].fillna("")
-    working["Veces visto"] = working["seen_count"].fillna(0).astype(int)
     working["Portal"] = working["portal"].fillna("").apply(lambda value: PORTAL_LABELS.get(str(value), str(value).title()))
+    working["Título"] = working["title"].apply(_format_text)
+    working["Precio"] = working["price_text"].apply(_format_text)
+    working["Ubicación"] = working["location_text"].apply(_format_text)
+    working["Provincia"] = working["province"].apply(_format_text)
+    working["Superficie"] = working["surface_sqm"].apply(_format_surface)
+    working["Habitaciones"] = working["rooms_count"].apply(_format_rooms)
+    working["Enlace"] = working["url_final"].apply(lambda value: value if value and str(value).strip() else "")
+    working["Primera detección"] = working["first_seen_date"].apply(_format_text)
+    working["Última detección"] = working["last_seen_date"].apply(_format_text)
+    working["Veces visto"] = working["seen_count"].fillna(0).astype(int)
 
     columns = [
         "listing_key",
         "Estado",
+        "Portal",
         "Título",
         "Precio",
         "Ubicación",
+        "Provincia",
         "Superficie",
         "Habitaciones",
-        "Enlace",
         "Primera detección",
         "Última detección",
+        "Enlace",
     ]
-    if include_portal:
-        columns.insert(1, "Portal")
-        columns.append("Veces visto")
-
+    if not include_portal:
+        columns.remove("Portal")
     return working[columns].set_index("listing_key")
 
 
-def _render_status_editor(dataframe: pd.DataFrame, *, key_prefix: str, include_portal: bool = False) -> None:
+def _render_status_editor(dataframe: pd.DataFrame, *, key_prefix: str, include_portal: bool = True) -> None:
     if dataframe.empty:
-        st.info("No hay anuncios para mostrar.")
+        st.info("No hay anuncios para mostrar con los filtros actuales.")
         return
 
     view_df = _prepare_view_dataframe(dataframe, include_portal=include_portal)
@@ -189,12 +233,12 @@ def _render_status_editor(dataframe: pd.DataFrame, *, key_prefix: str, include_p
             "Título",
             "Precio",
             "Ubicación",
+            "Provincia",
             "Superficie",
             "Habitaciones",
             "Enlace",
             "Primera detección",
             "Última detección",
-            "Veces visto",
         ]
         if column in view_df.columns
     ]
@@ -204,12 +248,17 @@ def _render_status_editor(dataframe: pd.DataFrame, *, key_prefix: str, include_p
         hide_index=True,
         key=f"editor_{key_prefix}",
         column_config={
-            "Estado": st.column_config.SelectboxColumn(
-                "Estado",
-                options=list(STATUS_BY_LABEL.keys()),
-                required=True,
-            ),
-            "Enlace": st.column_config.LinkColumn("Enlace", display_text="Abrir anuncio"),
+            "Estado": st.column_config.SelectboxColumn("Estado", options=list(STATUS_BY_LABEL.keys()), required=True, width="small"),
+            "Portal": st.column_config.TextColumn("Portal", width="small"),
+            "Título": st.column_config.TextColumn("Título", width="large"),
+            "Precio": st.column_config.TextColumn("Precio", width="small"),
+            "Ubicación": st.column_config.TextColumn("Ubicación", width="medium"),
+            "Provincia": st.column_config.TextColumn("Provincia", width="small"),
+            "Superficie": st.column_config.TextColumn("Superficie", width="small"),
+            "Habitaciones": st.column_config.TextColumn("Habitaciones", width="small"),
+            "Primera detección": st.column_config.TextColumn("Primera detección", width="small"),
+            "Última detección": st.column_config.TextColumn("Última detección", width="small"),
+            "Enlace": st.column_config.LinkColumn("Enlace", display_text="Abrir anuncio", width="small"),
         },
         disabled=disabled_columns,
     )
@@ -221,10 +270,7 @@ def _render_status_editor(dataframe: pd.DataFrame, *, key_prefix: str, include_p
             edited_status = str(edited_df.loc[listing_key, "Estado"])
             if original_status == edited_status:
                 continue
-            set_listing_status(
-                listing_key=str(listing_key),
-                status=STATUS_BY_LABEL[edited_status],
-            )
+            set_listing_status(listing_key=str(listing_key), status=STATUS_BY_LABEL[edited_status])
             changes += 1
 
         if changes:
@@ -241,6 +287,7 @@ def _apply_history_filters(
     status_filter: str,
     date_filter: str,
     search_text: str,
+    selected_provinces: list[str] | None = None,
 ) -> pd.DataFrame:
     filtered = dataframe.copy()
 
@@ -249,6 +296,10 @@ def _apply_history_filters(
 
     if status_filter != "Todos" and "workflow_status" in filtered.columns:
         filtered = filtered[filtered["workflow_status"].fillna("") == status_filter]
+
+    provinces = [province for province in (selected_provinces or []) if province]
+    if provinces and "province" in filtered.columns:
+        filtered = filtered[filtered["province"].fillna("").isin(provinces)]
 
     if date_filter != "Todas":
         filtered = filtered[
@@ -259,69 +310,105 @@ def _apply_history_filters(
     query = search_text.strip()
     if query and not filtered.empty:
         search_base = filtered.fillna("").astype(str)
-        matches = search_base.apply(
-            lambda series: series.str.contains(query, case=False, regex=False, na=False)
-        ).any(axis=1)
+        matches = search_base.apply(lambda series: series.str.contains(query, case=False, regex=False, na=False)).any(axis=1)
         filtered = filtered[matches]
 
     return filtered
 
 
-def render() -> None:
-    st.set_page_config(page_title="Panel de anuncios", layout="wide")
-    st.title("Panel de anuncios")
-    st.caption("Visor local v2 orientado a cliente")
+def _filter_by_provinces(dataframe: pd.DataFrame, selected_provinces: list[str]) -> pd.DataFrame:
+    if dataframe.empty or not selected_provinces or "province" not in dataframe.columns:
+        return dataframe
+    return dataframe[dataframe["province"].fillna("").isin(selected_provinces)]
 
-    if st.button("Actualizar vista"):
+
+def _select_all_provinces() -> None:
+    st.session_state["province_filter"] = list(SPAIN_PROVINCES)
+
+
+def _clear_provinces() -> None:
+    st.session_state["province_filter"] = []
+
+
+def _visible_summary_payload(summary: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "publicado_el": summary.get("published_at"),
+        "ultima_ejecucion": summary.get("source_pipeline_run_id"),
+        "nuevos_del_dia": summary.get("new_listings_count"),
+        "historico_total": summary.get("history_total_count"),
+        "rutas": {
+            "historico_maestro": str(history_dir() / "listings_master.jsonl"),
+            "estados": str(history_dir() / "listing_status.jsonl"),
+            "publicacion_diaria": str(_published_day_dir(str(summary.get("publish_date") or "")) / "summary.json") if summary.get("publish_date") else None,
+        },
+    }
+
+
+def render() -> None:
+    st.set_page_config(page_title=APP_NAME, layout="wide")
+    st.title(APP_NAME)
+    st.caption("Panel cliente de oportunidades inmobiliarias")
+
+    if st.button("Actualizar panel"):
         st.rerun()
 
     published_dates = list_published_dates()
     if not published_dates:
-        st.warning("Todavía no hay publicaciones diarias. Ejecuta `python -m src.main publish-daily --job bizkaia_naves_smoke`.")
+        st.warning("Todavía no hay publicaciones diarias disponibles. Ejecuta la actualización diaria desde CLI.")
         st.stop()
 
     with st.sidebar:
-        st.header("Vista")
-        selected_date = st.selectbox("Fecha publicada", published_dates)
+        st.header("Filtros")
+        selected_date = st.selectbox("Actualización", published_dates)
+        province_controls = st.columns(2)
+        province_controls[0].button("Todas", on_click=_select_all_provinces, use_container_width=True)
+        province_controls[1].button("Limpiar", on_click=_clear_provinces, use_container_width=True)
+        selected_provinces = st.multiselect(
+            "Provincias",
+            SPAIN_PROVINCES,
+            key="province_filter",
+            placeholder="Si no seleccionas ninguna, se muestran todas",
+        )
 
     summary = load_published_summary(selected_date) or {}
-    if not summary:
-        st.warning("No se encontró el resumen diario. Se mostrarán los datos disponibles sin métricas consolidadas.")
     master_df = _load_master_dataframe()
-    today_all_df = _load_published_dataframe(selected_date, "all")
-    today_all_df = _merge_master_data(today_all_df, master_df)
+    today_all_df = _merge_master_data(_load_published_dataframe(selected_date, "all"), master_df)
+    portal_frames = {
+        portal: _merge_master_data(_load_published_dataframe(selected_date, portal), master_df)
+        for portal in PORTAL_ORDER
+    }
 
     total_pending = int((master_df["workflow_status"].fillna("pending") == "pending").sum()) if not master_df.empty else 0
-    portal_counts = summary.get("portal_counts", {}) if isinstance(summary, dict) else {}
+    portal_counts = {portal: len(frame.index) for portal, frame in portal_frames.items()}
 
     metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
     metric_col1.metric("Actualización", selected_date)
-    metric_col2.metric("Nuevos hoy", int(summary.get("new_listings_count", len(today_all_df.index)) or 0))
-    metric_col3.metric("Histórico total", int(summary.get("history_total_count", len(master_df.index)) or 0))
+    metric_col2.metric("Nuevos hoy", len(today_all_df.index))
+    metric_col3.metric("Histórico total", len(master_df.index))
     metric_col4.metric("Pendientes", total_pending)
 
-    st.caption(
-        f"Última actualización: {summary.get('published_at', 'sin dato')}"
-        f" | Job: {summary.get('job_name', 'sin dato')}"
-    )
+    st.caption(f"Última ejecución: {summary.get('published_at', EMPTY_LABEL)} | Origen de datos: actualización diaria")
 
     portal_metric_cols = st.columns(len(PORTAL_ORDER))
     for idx, portal in enumerate(PORTAL_ORDER):
-        portal_metric_cols[idx].metric(PORTAL_LABELS[portal], int(portal_counts.get(portal, 0) or 0))
+        portal_metric_cols[idx].metric(PORTAL_LABELS[portal], portal_counts.get(portal, 0))
 
-    tabs = st.tabs([PORTAL_LABELS[portal] for portal in PORTAL_ORDER] + ["Histórico", "Técnico"])
+    tabs = st.tabs(["Nuevos del día"] + [PORTAL_LABELS[portal] for portal in PORTAL_ORDER] + ["Histórico", "Técnico"])
 
-    for index, portal in enumerate(PORTAL_ORDER):
+    with tabs[0]:
+        st.subheader("Nuevos del día")
+        visible_today = _filter_by_provinces(today_all_df, selected_provinces)
+        st.caption(f"Mostrando {len(visible_today.index)} anuncio(s) visibles")
+        _render_status_editor(visible_today, key_prefix=f"{selected_date}_all", include_portal=True)
+
+    for index, portal in enumerate(PORTAL_ORDER, start=1):
         with tabs[index]:
-            portal_df = _load_published_dataframe(selected_date, portal)
-            portal_df = _merge_master_data(portal_df, master_df)
-            st.subheader(f"{PORTAL_LABELS[portal]}: nuevos de hoy")
-            if portal_df.empty:
-                st.info("Sin anuncios nuevos hoy para este portal.")
-            else:
-                _render_status_editor(portal_df, key_prefix=f"{selected_date}_{portal}")
+            portal_df = _filter_by_provinces(portal_frames[portal], selected_provinces)
+            st.subheader(PORTAL_LABELS[portal])
+            st.caption(f"Mostrando {len(portal_df.index)} anuncio(s)")
+            _render_status_editor(portal_df, key_prefix=f"{selected_date}_{portal}", include_portal=False)
 
-    with tabs[len(PORTAL_ORDER)]:
+    with tabs[len(PORTAL_ORDER) + 1]:
         st.subheader("Histórico")
         if master_df.empty:
             st.info("No hay histórico disponible todavía.")
@@ -359,22 +446,18 @@ def render() -> None:
                 status_filter=status_filter,
                 date_filter=date_filter,
                 search_text=search_text,
+                selected_provinces=selected_provinces,
             )
             st.caption(f"Mostrando {len(filtered_history.index)} anuncio(s)")
             _render_status_editor(filtered_history, key_prefix=f"history_{selected_date}", include_portal=True)
 
-    with tabs[len(PORTAL_ORDER) + 1]:
+    with tabs[len(PORTAL_ORDER) + 2]:
         st.subheader("Técnico")
-        st.text_input("Ruta histórico maestro", value=str(history_dir() / "listings_master.jsonl"), disabled=True)
-        st.text_input("Ruta estados", value=str(history_dir() / "listing_status.jsonl"), disabled=True)
-        st.text_input("Ruta summary", value=str(_published_day_dir(selected_date) / "summary.json"), disabled=True)
-        st.json(summary)
-
-        manifest_path = Path(str(summary.get("source_manifest_path", ""))) if summary.get("source_manifest_path") else None
-        manifest_payload = _read_json(manifest_path)
-        if manifest_payload is not None:
-            st.markdown("**Manifest del pipeline origen**")
-            st.json(manifest_payload)
+        st.caption("Información secundaria para soporte interno de la demo.")
+        st.text_input("Histórico maestro", value=str(history_dir() / "listings_master.jsonl"), disabled=True)
+        st.text_input("Estados", value=str(history_dir() / "listing_status.jsonl"), disabled=True)
+        st.text_input("Publicación diaria", value=str(_published_day_dir(selected_date) / "summary.json"), disabled=True)
+        st.json(_visible_summary_payload({"publish_date": selected_date, **summary}))
 
 
 if __name__ == "__main__":

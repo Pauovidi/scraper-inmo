@@ -1,10 +1,11 @@
-# Scraper Inmobiliario Bizkaia
+# Inmoscraper
 
 Proyecto Python incremental con baseline legacy preservado y una v2 orientada a cliente final:
 
 - histórico maestro de anuncios
 - publicación diaria solo de anuncios nuevos
 - separación por portal
+- filtro por provincias en la interfaz
 - estados de trabajo persistentes
 - visor local en Streamlit, en español
 
@@ -18,6 +19,7 @@ Estado actual de demo:
 - la capa de `listing harvester` ya aporta volumen útil real, con mejor rendimiento especialmente en `pisos`
 - `fotocasa` mantiene señal útil estable en demo
 - `milanuncios`, `idealista` y `yaencontre` siguen con cobertura más variable según bloqueo del origen
+- las páginas de bloqueo tipo `Pardon our interruption` o `Sentimos la interrupción` se excluyen de la vista cliente y de la publicación nueva
 
 La demo está pensada para enseñar un producto ya utilizable, no una cobertura homogénea perfecta en todos los portales.
 

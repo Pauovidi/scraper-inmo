@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.publish.client_cleaning import is_blocked_client_record, normalize_client_record
 from src.utils.listing_identity import (
     canonicalize_url,
     clean_text as _clean_text,
@@ -28,7 +29,7 @@ def normalize_listing_record(record: dict[str, Any]) -> dict[str, Any]:
     identity = resolve_listing_identity(record)
     url_final = _clean_text(record.get("url_final") or record.get("url_original"))
 
-    return {
+    normalized = {
         "portal": identity["portal"],
         "source_domain": _clean_text(record.get("source_domain")) or "unknown-domain",
         "listing_key": identity["listing_key"],
@@ -40,16 +41,20 @@ def normalize_listing_record(record: dict[str, Any]) -> dict[str, Any]:
         "price_text": _clean_text(record.get("price_text")) or None,
         "price_value": _float_or_none(record.get("price_value")),
         "location_text": _clean_text(record.get("location_text")) or None,
+        "province": None,
         "surface_sqm": _float_or_none(record.get("surface_sqm")),
         "rooms_count": _int_or_none(record.get("rooms_count")),
         "parser_key": _clean_text(record.get("parser_key")) or None,
         "parse_status": _clean_text(record.get("parse_status")) or None,
     }
+    return normalize_client_record(normalized)
 
 
 def dedupe_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     deduped: dict[str, dict[str, Any]] = {}
     for record in records:
         normalized = normalize_listing_record(record)
+        if is_blocked_client_record(normalized):
+            continue
         deduped[str(normalized["listing_key"])] = normalized
     return list(deduped.values())

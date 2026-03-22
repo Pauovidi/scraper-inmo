@@ -96,7 +96,40 @@ def _latest_pipeline_manifest(job_name: str) -> tuple[dict[str, Any], Path] | No
     return None
 
 
+def _best_same_day_pipeline_manifest(job_name: str, publish_date: str) -> tuple[dict[str, Any], Path] | None:
+    rows = list_pipeline_runs(job_name=job_name)
+    candidates: list[tuple[int, str, dict[str, Any], Path]] = []
+
+    for row in rows:
+        manifest_path = row.get("manifest_path")
+        if not manifest_path:
+            continue
+        path = Path(str(manifest_path))
+        if not path.exists():
+            continue
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if _pipeline_run_date(payload) != publish_date:
+            continue
+        try:
+            export_rows = _read_export_rows(payload)
+        except FileNotFoundError:
+            continue
+        timestamp = str(row.get("timestamp_utc_end") or row.get("timestamp_utc_start") or "")
+        candidates.append((len(export_rows), timestamp, payload, path))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    _, _, payload, path = candidates[0]
+    return payload, path
+
+
 def _resolve_pipeline_manifest(job_name: str, publish_date: str) -> tuple[dict[str, Any], Path, bool]:
+    same_day = _best_same_day_pipeline_manifest(job_name=job_name, publish_date=publish_date)
+    if same_day is not None:
+        return same_day[0], same_day[1], False
+
     latest = _latest_pipeline_manifest(job_name=job_name)
     if latest is not None and _pipeline_run_date(latest[0]) == publish_date:
         return latest[0], latest[1], False

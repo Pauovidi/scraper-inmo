@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
 from app.streamlit_app import _apply_history_filters
 from src.publish.history import load_master_map, load_published_summary
-from src.publish.runner import publish_records, set_listing_status
+from src.publish.runner import _resolve_pipeline_manifest, publish_records, set_listing_status
 from src.publish.status_store import read_status_map
 
 
@@ -41,6 +43,46 @@ def _record(
 
 
 class PublishRunnerTests(unittest.TestCase):
+    def test_resolve_pipeline_manifest_prefers_richer_same_day_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pipeline_root = root / "pipeline"
+            older_manifest_path = pipeline_root / "run_a" / "manifest.json"
+            newer_manifest_path = pipeline_root / "run_b" / "manifest.json"
+            older_export = pipeline_root / "run_a" / "properties.csv"
+            newer_export = pipeline_root / "run_b" / "properties.csv"
+            older_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            newer_manifest_path.parent.mkdir(parents=True, exist_ok=True)
+            older_export.write_text("source_domain,title\npisos.com,Nave A\npisos.com,Nave B\n", encoding="utf-8")
+            newer_export.write_text("source_domain,title\npisos.com,Nave C\n", encoding="utf-8")
+            older_manifest = {
+                "timestamp_utc_start": "2026-03-22T10:00:00Z",
+                "export_paths": {"csv": str(older_export)},
+            }
+            newer_manifest = {
+                "timestamp_utc_start": "2026-03-22T12:00:00Z",
+                "export_paths": {"csv": str(newer_export)},
+            }
+            older_manifest_path.write_text(json.dumps(older_manifest), encoding="utf-8")
+            newer_manifest_path.write_text(json.dumps(newer_manifest), encoding="utf-8")
+
+            with patch(
+                "src.publish.runner.list_pipeline_runs",
+                return_value=[
+                    {"manifest_path": str(newer_manifest_path), "timestamp_utc_start": "2026-03-22T12:00:00Z"},
+                    {"manifest_path": str(older_manifest_path), "timestamp_utc_start": "2026-03-22T10:00:00Z"},
+                ],
+            ), patch("src.publish.runner.run_job_full") as mocked_run_job_full:
+                manifest, manifest_path, pipeline_executed = _resolve_pipeline_manifest(
+                    job_name="internal_job_name",
+                    publish_date="2026-03-22",
+                )
+
+            self.assertFalse(pipeline_executed)
+            self.assertEqual(manifest_path, older_manifest_path)
+            self.assertEqual(manifest["export_paths"]["csv"], str(older_export))
+            mocked_run_job_full.assert_not_called()
+
     def test_publish_records_tracks_history_and_only_publishes_new_listings(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
