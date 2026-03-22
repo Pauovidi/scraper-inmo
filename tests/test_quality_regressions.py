@@ -5,6 +5,7 @@ from pathlib import Path
 
 from src.discovery.extractor import discover_candidate_urls
 from src.parsers.fotocasa_detail_parser import parse_fotocasa_detail_snapshot
+from src.parsers.generic_parser import parse_generic_snapshot
 from src.parsers.normalization import normalize_price
 from src.parsers.snapshot_bridge import SnapshotBundle
 
@@ -68,6 +69,37 @@ class QualityRegressionsTests(unittest.TestCase):
         self.assertIn(record.parse_status, {"partial", "error"})
         self.assertIsNone(record.price_value)
         self.assertLess(record.confidence_score, 0.7)
+
+    def test_milanuncios_detail_url_with_price_and_surface_is_treated_as_detail(self) -> None:
+        html = """
+        <html><body>
+          <title>¡Ups! Algo se detuvo</title>
+          <h1>¡Ups! Algo se detuvo</h1>
+          <div>Bilbao</div>
+          <div>1.875 €</div>
+          <div>500 m²</div>
+        </body></html>
+        """
+        bundle = SnapshotBundle(
+            snapshot_path=Path("/tmp/milanuncios"),
+            html=html,
+            markdown="",
+            meta={
+                "snapshot_id": "s2",
+                "run_id": "r2",
+                "snapshot_path": "/tmp/milanuncios",
+                "domain": "milanuncios.com",
+                "url_original": "https://www.milanuncios.com/alquiler-de-naves-industriales-en-bilbao-vizcaya/bilbao-479664210.htm",
+                "url_final": "https://www.milanuncios.com/alquiler-de-naves-industriales-en-bilbao-vizcaya/bilbao-479664210.htm",
+            },
+        )
+
+        record = parse_generic_snapshot(bundle, "generic")
+
+        self.assertEqual(record.page_kind, "detail")
+        self.assertIn(record.parse_status, {"ok", "partial"})
+        self.assertEqual(record.price_value, 1875.0)
+        self.assertEqual(record.surface_sqm, 500.0)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,22 @@ Proyecto Python incremental con baseline legacy preservado y una v2 orientada a 
 
 El scraper técnico sigue funcionando por CLI. La v2 reutiliza sus outputs para presentar resultados de forma más útil y mantenible.
 
+## Listing Harvester
+
+Esta iteración añade una capa nueva de adquisición orientada a volumen:
+
+1. `listing acquisition`:
+   - recorre listados por portal
+   - pagina varias páginas por source
+   - archiva HTML real de listados
+   - extrae cards/candidatos en masa
+   - normaliza y deduplica URLs de detalle
+2. `detail enrichment`:
+   - solo archiva detalle para candidatos nuevos o relevantes
+   - reutiliza el pipeline actual de snapshots, parse, export y publish
+
+La idea es subir recall sin rehacer la v2 de producto ni romper `publish/history`.
+
 ## Qué hace la v2
 
 La v2 parte de los exports generados por el pipeline técnico y construye una capa de publicación simple:
@@ -30,6 +46,7 @@ La v2 parte de los exports generados por el pipeline técnico y construye una ca
 - Pipeline técnico completo:
   - `run-job`
   - `discover-job-run`
+  - `harvest-listings`
   - `archive-discovered`
   - `parse-discovered`
   - `run-job-full`
@@ -53,6 +70,7 @@ python -m pip install -r requirements.txt
 Pipeline técnico:
 
 ```powershell
+python -m src.main harvest-listings --job bizkaia_naves_smoke
 python -m src.main run-job-full --job bizkaia_naves
 python -m src.main run-job-full --job bizkaia_naves_smoke --resume
 ```
@@ -87,6 +105,33 @@ La deduplicación histórica usa esta prioridad:
 1. `external_id` del portal si se puede resolver
 2. `canonical_url` / `url_final`
 3. hash estable con portal + título + precio + ubicación + superficie
+
+## Cómo funciona `harvest-listings`
+
+`harvest-listings`:
+
+1. lee las `sources` del job
+2. usa `listing_start_urls` y `max_listing_pages` por portal
+3. construye la paginación con `listing_page_param` o `listing_page_url_template`
+4. archiva cada página de listado con el archiver existente, etiquetándola como `listing_page`
+5. parsea el HTML archivado para extraer cards rápidas:
+   - `source_domain`
+   - `candidate_url`
+   - `title_text`
+   - `price_text`
+   - `location_text`
+   - `surface_text`
+   - `rooms_text`
+   - `external_id`
+   - `listing_key` provisional
+   - `listing_page_url` origen
+6. deduplica candidatos dentro de la ejecución y entre páginas del mismo portal
+7. marca qué candidatos pasan a detalle:
+   - nuevos
+   - o vistos en días anteriores
+   - excluyendo los ya vistos hoy en histórico
+
+`run-job-full` lo ejecuta automáticamente antes de `archive-discovered`, de forma que el enriquecimiento de detalle consuma más candidatos sin cambiar la publicación ni el histórico.
 
 ## Histórico y estados
 
@@ -182,6 +227,18 @@ El estado se puede cambiar directamente desde la app y queda persistido en disco
 
 ```text
 data/
+  harvest/
+    YYYY-MM-DD/
+      summary.json
+      fotocasa/
+        candidates.jsonl
+        summary.json
+        listing_pages/
+          manifest.jsonl
+      idealista/
+      milanuncios/
+      pisos/
+      yaencontre/
   history/
     listings_master.jsonl
     listing_status.jsonl
@@ -201,6 +258,8 @@ data/
   snapshots/
 ```
 
+Los snapshots HTML reales de listados siguen guardándose en `data/snapshots/`, reutilizando el archiver existente. `data/harvest/` conserva los manifiestos y candidatos deduplicados de cada ejecución diaria.
+
 ## Tests
 
 ```powershell
@@ -210,6 +269,9 @@ python -m unittest discover -s tests -p "test_*.py" -v
 ## Limitaciones actuales
 
 - La cobertura real sigue dependiendo de las fuentes que respondan bien.
+- La paginación está soportada por configuración simple (`param` o `template`), sin resolver todavía todos los patrones complejos de cada portal.
+- La extracción de cards es rápida y deliberadamente heurística; prioriza volumen y puede dejar campos parciales en algunos portales.
+- `harvest-listings` persiste una vista diaria simple en `data/harvest/YYYY-MM-DD/`; si se reejecuta varias veces el mismo día, actualiza esos ficheros.
 - La representación por portal en la interfaz ya existe para 5 portales, aunque algunos puedan no aportar datos en una ejecución concreta.
 - No hay panel multiusuario, autenticación ni CRM.
 - No hay crawling profundo ni anti-bot avanzado en esta fase.

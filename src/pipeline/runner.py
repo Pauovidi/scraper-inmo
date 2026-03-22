@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.discovery.runner import archive_discovered, discover_job_run
+from src.harvest.runner import harvest_listings
 from src.jobs.runner import run_job
 from src.parsers.runner import parse_discovered
 from src.pipeline.index import append_pipeline_run_entry
@@ -86,6 +87,11 @@ def _is_parse_discovered_done(manifest: dict[str, Any]) -> bool:
     return bool(csv_path and jsonl_path and Path(csv_path).exists() and Path(jsonl_path).exists())
 
 
+def _is_harvest_done(manifest: dict[str, Any]) -> bool:
+    summary_path = manifest.get("harvest_summary_path")
+    return bool(summary_path and Path(summary_path).exists())
+
+
 def _append_error(errors: list[dict[str, Any]], step: str, exc: Exception) -> None:
     errors.append({"step": step, "error": f"{type(exc).__name__}: {exc}"})
 
@@ -99,6 +105,7 @@ def run_job_full(
     force_parse: bool = False,
     run_job_fn=run_job,
     discover_fn=discover_job_run,
+    harvest_fn=harvest_listings,
     archive_discovered_fn=archive_discovered,
     parse_discovered_fn=parse_discovered,
     pipeline_root_dir: Path | None = None,
@@ -186,10 +193,43 @@ def run_job_full(
             _append_error(errors_summary, "discover-job-run", exc)
             log_fn(f"[pipeline] step=discover-job-run status=failed error={type(exc).__name__}")
 
+    harvest_summary_path = manifest.get("harvest_summary_path")
+    if not job_run_id:
+        step_statuses["harvest-listings"] = "skipped"
+        log_fn("[pipeline] step=harvest-listings status=skipped reason=missing_job_run")
+    elif resume and _is_harvest_done(manifest):
+        step_statuses["harvest-listings"] = "skipped"
+        log_fn("[pipeline] step=harvest-listings status=skipped")
+    else:
+        try:
+            log_fn("[pipeline] step=harvest-listings status=started")
+            summary = harvest_fn(
+                job_name=job_name,
+                linked_run_id=str(job_run_id),
+                merge_into_discovery=True,
+            )
+            harvest_summary_path = str(Path(summary["data_root"]) / "summary.json")
+            manifest["harvest_summary_path"] = harvest_summary_path
+            manifest["harvest_counts"] = {
+                "candidate_count": summary.get("candidate_count", 0),
+                "selected_for_detail_count": summary.get("selected_for_detail_count", 0),
+                "errors_count": summary.get("errors_count", 0),
+            }
+            discovery_merge = summary.get("discovery_merge") or {}
+            if discovery_merge.get("discovered_output_path"):
+                discovered_output_path = str(discovery_merge["discovered_output_path"])
+                manifest["discovered_output_path"] = discovered_output_path
+            step_statuses["harvest-listings"] = "completed"
+            log_fn("[pipeline] step=harvest-listings status=completed")
+        except Exception as exc:
+            step_statuses["harvest-listings"] = "failed"
+            _append_error(errors_summary, "harvest-listings", exc)
+            log_fn(f"[pipeline] step=harvest-listings status=failed error={type(exc).__name__}")
+
     archive_summary_path = manifest.get("archive_discovered_summary_path")
-    if step_statuses.get("discover-job-run") == "failed":
+    if not discovered_output_path or not Path(str(discovered_output_path)).exists():
         step_statuses["archive-discovered"] = "skipped"
-        log_fn("[pipeline] step=archive-discovered status=skipped reason=discovery_failed")
+        log_fn("[pipeline] step=archive-discovered status=skipped reason=missing_discovered_output")
     elif resume and not force_archive_discovered and _is_archive_discovered_done(manifest):
         step_statuses["archive-discovered"] = "skipped"
         log_fn("[pipeline] step=archive-discovered status=skipped")
@@ -254,6 +294,7 @@ def run_job_full(
     manifest["discovery_run_id"] = discovery_run_id
     manifest["archive_discovered_summary_path"] = archive_summary_path
     manifest["parse_discovered_summary_path"] = parse_summary_path
+    manifest["harvest_summary_path"] = harvest_summary_path
     manifest["output_job_run_id"] = job_run_id
     manifest["output_paths"] = {
         "discovered_output_path": discovered_output_path,

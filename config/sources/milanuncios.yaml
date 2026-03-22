@@ -1,9 +1,9 @@
 {
-  "domain": "yaencontre.com",
+  "domain": "milanuncios.com",
   "enabled": true,
   "mode": "seed_only",
   "start_urls": [
-    "https://www.yaencontre.com/alquiler/naves/bizkaia"
+    "https://www.milanuncios.com/alquiler-de-naves-industriales-en-vizcaya/"
   ],
   "rate_limit_seconds": 2,
   "login_allowed": false,
@@ -11,12 +11,12 @@
   "harvest_enabled": true,
   "parser_key": "generic_listing",
   "listing_start_urls": [
-    "https://www.yaencontre.com/alquiler/naves/bizkaia"
+    "https://www.milanuncios.com/alquiler-de-naves-industriales-en-vizcaya/"
   ],
   "max_listing_pages": 3,
   "listing_page_start": 1,
-  "listing_page_param": "page",
+  "listing_page_param": "pagina",
   "listing_first_page_uses_start_url": true,
-  "notes": "Seed inicial con harvesting paginado; parser específico pendiente.",
+  "notes": "Configuración inicial de harvesting por listados para Milanuncios.",
   "timeout_seconds": 20
 }

@@ -96,6 +96,9 @@ def _page_kind(url: str, links_count: int, has_price: bool, has_surface: bool, h
     if any(token in low for token in detail_tokens):
         return "detail"
 
+    if re.search(r"\.htm(?:\?|$)", low) and has_price and has_surface:
+        return "detail"
+
     if has_price and has_surface and has_rooms and links_count <= 12:
         return "detail"
 

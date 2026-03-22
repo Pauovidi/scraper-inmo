@@ -3,6 +3,7 @@
   "sources": [
     "idealista.com",
     "fotocasa.es",
+    "milanuncios.com",
     "pisos.com",
     "yaencontre.com"
   ],
@@ -11,5 +12,5 @@
     "property_type": "nave"
   },
   "max_urls": 50,
-  "notes": "Job inicial para resolver seeds y preparar archivado por lotes en siguientes iteraciones."
+  "notes": "Job principal con cobertura explícita de cinco portales y harvesting de listados previo al detalle."
 }

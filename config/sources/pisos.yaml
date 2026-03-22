@@ -8,7 +8,15 @@
   "rate_limit_seconds": 2,
   "login_allowed": false,
   "archiver_enabled": true,
+  "harvest_enabled": true,
   "parser_key": "pisos_detail",
-  "notes": "Seed ajustada para validación smoke evitando la ruta 404 previa.",
+  "listing_start_urls": [
+    "https://www.pisos.com/alquiler/"
+  ],
+  "max_listing_pages": 3,
+  "listing_page_start": 1,
+  "listing_page_param": "pagina",
+  "listing_first_page_uses_start_url": true,
+  "notes": "Seed ajustada para validación smoke y harvesting paginado con heurísticas genéricas.",
   "timeout_seconds": 20
 }

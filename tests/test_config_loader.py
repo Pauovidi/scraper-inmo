@@ -13,7 +13,11 @@ class ConfigLoaderTests(unittest.TestCase):
         sources = load_sources()
         domains = {item["domain"] for item in sources}
         self.assertIn("idealista.com", domains)
+        self.assertIn("milanuncios.com", domains)
         self.assertIn("pisos.com", domains)
+        by_domain = {item["domain"]: item for item in sources}
+        self.assertTrue(by_domain["fotocasa.es"]["harvest_enabled"])
+        self.assertGreaterEqual(by_domain["idealista.com"]["max_listing_pages"], 1)
 
     def test_load_jobs_and_resolve_start_urls(self) -> None:
         jobs = load_jobs()

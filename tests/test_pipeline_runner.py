@@ -14,6 +14,7 @@ class PipelineRunnerTests(unittest.TestCase):
     def _make_fakes(self, tmp_path: Path, run_id: str, calls: dict[str, int]):
         discovered_out = tmp_path / "discovered" / "job_runs" / "bizkaia_naves" / run_id / "discovered_urls.jsonl"
         archive_summary_path = discovered_out.parent / "archive_summary.json"
+        harvest_summary_path = tmp_path / "harvest" / "2026-03-22" / "summary.json"
         parsed_details = tmp_path / "parsed" / "discovered" / "bizkaia_naves" / run_id / "parsed_details.jsonl"
         parse_summary = parsed_details.parent / "summary.json"
         export_jsonl = tmp_path / "exports" / "bizkaia_naves" / run_id / "properties.jsonl"
@@ -43,6 +44,46 @@ class PipelineRunnerTests(unittest.TestCase):
                 encoding="utf-8",
             )
             return {"discovered_output_path": str(discovered_out)}
+
+        def fake_harvest(*, job_name: str, linked_run_id: str, merge_into_discovery: bool):
+            calls["harvest"] += 1
+            harvest_summary_path.parent.mkdir(parents=True, exist_ok=True)
+            discovered_out.parent.mkdir(parents=True, exist_ok=True)
+            discovered_out.write_text(
+                json.dumps({"discovered_url": "https://www.idealista.com/inmueble/99887766/"}) + "\n",
+                encoding="utf-8",
+            )
+            harvest_summary_path.write_text(
+                json.dumps(
+                    {
+                        "job_name": job_name,
+                        "linked_run_id": linked_run_id,
+                        "candidate_count": 3,
+                        "selected_for_detail_count": 2,
+                        "errors_count": 0,
+                        "data_root": str(harvest_summary_path.parent),
+                        "discovery_merge": {
+                            "discovered_output_path": str(discovered_out),
+                            "merged_total_count": 1,
+                            "merged_new_count": 1,
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return {
+                "job_name": job_name,
+                "linked_run_id": linked_run_id,
+                "candidate_count": 3,
+                "selected_for_detail_count": 2,
+                "errors_count": 0,
+                "data_root": str(harvest_summary_path.parent),
+                "discovery_merge": {
+                    "discovered_output_path": str(discovered_out),
+                    "merged_total_count": 1,
+                    "merged_new_count": 1,
+                },
+            }
 
         def fake_archive(*, job_name: str, run_id: str):
             calls["archive"] += 1
@@ -76,18 +117,19 @@ class PipelineRunnerTests(unittest.TestCase):
                 "export_csv_path": str(export_csv),
             }
 
-        return fake_run_job, fake_discover, fake_archive, fake_parse
+        return fake_run_job, fake_discover, fake_harvest, fake_archive, fake_parse
 
     def test_run_job_full_generates_manifest_and_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            calls = {"run": 0, "discover": 0, "archive": 0, "parse": 0}
-            fake_run_job, fake_discover, fake_archive, fake_parse = self._make_fakes(tmp_path, "jobrun_001", calls)
+            calls = {"run": 0, "discover": 0, "harvest": 0, "archive": 0, "parse": 0}
+            fake_run_job, fake_discover, fake_harvest, fake_archive, fake_parse = self._make_fakes(tmp_path, "jobrun_001", calls)
 
             result = run_job_full(
                 job_name="bizkaia_naves",
                 run_job_fn=fake_run_job,
                 discover_fn=fake_discover,
+                harvest_fn=fake_harvest,
                 archive_discovered_fn=fake_archive,
                 parse_discovered_fn=fake_parse,
                 pipeline_root_dir=tmp_path / "pipeline_runs",
@@ -96,7 +138,7 @@ class PipelineRunnerTests(unittest.TestCase):
             )
 
             self.assertEqual(result.status, "completed")
-            self.assertEqual(calls, {"run": 1, "discover": 1, "archive": 1, "parse": 1})
+            self.assertEqual(calls, {"run": 1, "discover": 1, "harvest": 1, "archive": 1, "parse": 1})
             self.assertTrue(result.manifest_path.exists())
 
             manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
@@ -104,6 +146,7 @@ class PipelineRunnerTests(unittest.TestCase):
             self.assertEqual(manifest["job_run_id"], "jobrun_001")
             self.assertEqual(manifest["discovery_run_id"], "jobrun_001")
             self.assertIn("export_paths", manifest)
+            self.assertIn("harvest_counts", manifest)
 
             rows = list_pipeline_runs(index_file=tmp_path / "index" / "pipeline_runs_index.jsonl")
             self.assertEqual(len(rows), 1)
@@ -112,13 +155,14 @@ class PipelineRunnerTests(unittest.TestCase):
     def test_resume_skips_completed_steps_without_duplicate_index_entries(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            calls = {"run": 0, "discover": 0, "archive": 0, "parse": 0}
-            fake_run_job, fake_discover, fake_archive, fake_parse = self._make_fakes(tmp_path, "jobrun_010", calls)
+            calls = {"run": 0, "discover": 0, "harvest": 0, "archive": 0, "parse": 0}
+            fake_run_job, fake_discover, fake_harvest, fake_archive, fake_parse = self._make_fakes(tmp_path, "jobrun_010", calls)
 
             first = run_job_full(
                 job_name="bizkaia_naves",
                 run_job_fn=fake_run_job,
                 discover_fn=fake_discover,
+                harvest_fn=fake_harvest,
                 archive_discovered_fn=fake_archive,
                 parse_discovered_fn=fake_parse,
                 pipeline_root_dir=tmp_path / "pipeline_runs",
@@ -131,6 +175,7 @@ class PipelineRunnerTests(unittest.TestCase):
                 resume=True,
                 run_job_fn=fake_run_job,
                 discover_fn=fake_discover,
+                harvest_fn=fake_harvest,
                 archive_discovered_fn=fake_archive,
                 parse_discovered_fn=fake_parse,
                 pipeline_root_dir=tmp_path / "pipeline_runs",
@@ -139,7 +184,7 @@ class PipelineRunnerTests(unittest.TestCase):
             )
 
             self.assertEqual(second.pipeline_run_id, first.pipeline_run_id)
-            self.assertEqual(calls, {"run": 1, "discover": 1, "archive": 1, "parse": 1})
+            self.assertEqual(calls, {"run": 1, "discover": 1, "harvest": 1, "archive": 1, "parse": 1})
 
             rows = list_pipeline_runs(index_file=tmp_path / "index" / "pipeline_runs_index.jsonl")
             self.assertEqual(len(rows), 1)
@@ -148,19 +193,21 @@ class PipelineRunnerTests(unittest.TestCase):
             manifest = json.loads(second.manifest_path.read_text(encoding="utf-8"))
             self.assertEqual(manifest["step_statuses"]["run-job"], "skipped")
             self.assertEqual(manifest["step_statuses"]["discover-job-run"], "skipped")
+            self.assertEqual(manifest["step_statuses"]["harvest-listings"], "skipped")
             self.assertEqual(manifest["step_statuses"]["archive-discovered"], "skipped")
             self.assertEqual(manifest["step_statuses"]["parse-discovered"], "skipped")
 
     def test_resume_force_parse_reexecutes_only_parse(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            calls = {"run": 0, "discover": 0, "archive": 0, "parse": 0}
-            fake_run_job, fake_discover, fake_archive, fake_parse = self._make_fakes(tmp_path, "jobrun_020", calls)
+            calls = {"run": 0, "discover": 0, "harvest": 0, "archive": 0, "parse": 0}
+            fake_run_job, fake_discover, fake_harvest, fake_archive, fake_parse = self._make_fakes(tmp_path, "jobrun_020", calls)
 
             run_job_full(
                 job_name="bizkaia_naves",
                 run_job_fn=fake_run_job,
                 discover_fn=fake_discover,
+                harvest_fn=fake_harvest,
                 archive_discovered_fn=fake_archive,
                 parse_discovered_fn=fake_parse,
                 pipeline_root_dir=tmp_path / "pipeline_runs",
@@ -174,6 +221,7 @@ class PipelineRunnerTests(unittest.TestCase):
                 force_parse=True,
                 run_job_fn=fake_run_job,
                 discover_fn=fake_discover,
+                harvest_fn=fake_harvest,
                 archive_discovered_fn=fake_archive,
                 parse_discovered_fn=fake_parse,
                 pipeline_root_dir=tmp_path / "pipeline_runs",
@@ -183,19 +231,21 @@ class PipelineRunnerTests(unittest.TestCase):
 
             self.assertEqual(calls["run"], 1)
             self.assertEqual(calls["discover"], 1)
+            self.assertEqual(calls["harvest"], 1)
             self.assertEqual(calls["archive"], 1)
             self.assertEqual(calls["parse"], 2)
 
     def test_load_pipeline_manifest_from_index(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
-            calls = {"run": 0, "discover": 0, "archive": 0, "parse": 0}
-            fake_run_job, fake_discover, fake_archive, fake_parse = self._make_fakes(tmp_path, "jobrun_030", calls)
+            calls = {"run": 0, "discover": 0, "harvest": 0, "archive": 0, "parse": 0}
+            fake_run_job, fake_discover, fake_harvest, fake_archive, fake_parse = self._make_fakes(tmp_path, "jobrun_030", calls)
 
             result = run_job_full(
                 job_name="bizkaia_naves",
                 run_job_fn=fake_run_job,
                 discover_fn=fake_discover,
+                harvest_fn=fake_harvest,
                 archive_discovered_fn=fake_archive,
                 parse_discovered_fn=fake_parse,
                 pipeline_root_dir=tmp_path / "pipeline_runs",

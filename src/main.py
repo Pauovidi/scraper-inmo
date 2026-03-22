@@ -16,6 +16,7 @@ from src.config import (
     resolve_job_start_urls,
 )
 from src.discovery import archive_discovered, discover_job_run
+from src.harvest import harvest_listings
 from src.jobs import list_job_runs, load_job_run_manifest, run_job
 from src.parsers import parse_discovered, parse_job_run, parse_snapshot
 from src.pipeline import list_pipeline_runs, load_pipeline_run_manifest, run_job_full
@@ -125,6 +126,17 @@ def _cmd_parse_discovered(args: argparse.Namespace) -> int:
 
     _print_json(summary)
     return 0 if summary.get("error_count", 0) == 0 else 1
+
+
+def _cmd_harvest_listings(args: argparse.Namespace) -> int:
+    try:
+        summary = harvest_listings(job_name=args.job)
+    except Exception as exc:
+        print(f"harvest-listings failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+    _print_json(summary)
+    return 0 if summary.get("errors_count", 0) == 0 else 1
 
 
 def _cmd_publish_daily(args: argparse.Namespace) -> int:
@@ -348,6 +360,11 @@ def build_parser() -> argparse.ArgumentParser:
     archive_discovered_parser.add_argument("--run-id", required=True, help="Job run id")
     archive_discovered_parser.add_argument("--json", dest="as_json", action="store_true", help="Output JSON")
     archive_discovered_parser.set_defaults(func=_cmd_archive_discovered)
+
+    harvest_listings_parser = subparsers.add_parser("harvest-listings", help="Harvest listing pages and extract candidate detail URLs")
+    harvest_listings_parser.add_argument("--job", required=True, help="Job name")
+    harvest_listings_parser.add_argument("--json", dest="as_json", action="store_true", help="Output JSON")
+    harvest_listings_parser.set_defaults(func=_cmd_harvest_listings)
 
     parse_snapshot_parser = subparsers.add_parser("parse-snapshot", help="Parse one archived snapshot")
     parse_snapshot_parser.add_argument("--path", required=True, help="Snapshot path or meta.json path")

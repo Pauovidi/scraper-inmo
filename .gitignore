@@ -72,6 +72,10 @@ data/history/*
 data/discovered/*
 !data/discovered/.gitkeep
 
+# Harvest outputs runtime files
+data/harvest/*
+!data/harvest/.gitkeep
+
 
 # Export outputs runtime files
 data/exports/*

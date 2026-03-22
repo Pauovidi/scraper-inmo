@@ -77,6 +77,33 @@ def _validate_source(data: dict[str, Any], path: Path) -> None:
     if "timeout_seconds" in data and not isinstance(data["timeout_seconds"], (int, float)):
         raise ValueError(f"timeout_seconds must be numeric in {path.name}")
 
+    if "listing_start_urls" in data and (
+        not isinstance(data["listing_start_urls"], list) or not data["listing_start_urls"]
+    ):
+        raise ValueError(f"listing_start_urls must be a non-empty list in {path.name}")
+
+    if "max_listing_pages" in data and not isinstance(data["max_listing_pages"], int):
+        raise ValueError(f"max_listing_pages must be an integer in {path.name}")
+
+    if "listing_page_start" in data and not isinstance(data["listing_page_start"], int):
+        raise ValueError(f"listing_page_start must be an integer in {path.name}")
+
+    if "harvest_enabled" in data and not isinstance(data["harvest_enabled"], bool):
+        raise ValueError(f"harvest_enabled must be boolean in {path.name}")
+
+
+def _apply_source_defaults(data: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(data)
+    normalized.setdefault("timeout_seconds", 20)
+    normalized.setdefault("harvest_enabled", False)
+    normalized.setdefault("listing_start_urls", list(normalized.get("start_urls", [])))
+    normalized.setdefault("max_listing_pages", 1)
+    normalized.setdefault("listing_page_start", 1)
+    normalized.setdefault("listing_first_page_uses_start_url", True)
+    normalized.setdefault("listing_page_param", None)
+    normalized.setdefault("listing_page_url_template", None)
+    return normalized
+
 
 def _validate_job(data: dict[str, Any], path: Path) -> None:
     _validate_required_fields(data, REQUIRED_JOB_FIELDS, path)
@@ -88,7 +115,7 @@ def _validate_job(data: dict[str, Any], path: Path) -> None:
 def load_sources() -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for path in sorted(sources_dir().glob("*.yaml")):
-        data = _load_yaml_file(path)
+        data = _apply_source_defaults(_load_yaml_file(path))
         _validate_source(data, path)
         out.append(data)
     return out
@@ -203,5 +230,33 @@ def resolve_job_plan(job_name: str) -> dict[str, Any]:
         "excluded_sources": resolved["excluded_sources"],
         "url_items": url_items,
         "duplicate_start_urls_skipped": duplicate_count,
+    }
+
+
+def resolve_job_harvest_plan(job_name: str) -> dict[str, Any]:
+    resolved = resolve_job_sources(job_name)
+    job = resolved["job"]
+
+    included_sources: list[dict[str, Any]] = []
+    excluded_sources = list(resolved["excluded_sources"])
+
+    for src in resolved["included_sources"]:
+        if not src.get("harvest_enabled", False):
+            excluded_sources.append({"domain": src["domain"], "reason": "harvest_disabled"})
+            continue
+
+        listing_start_urls = src.get("listing_start_urls") or src.get("start_urls") or []
+        if not isinstance(listing_start_urls, list) or not listing_start_urls:
+            excluded_sources.append({"domain": src["domain"], "reason": "missing_listing_start_urls"})
+            continue
+
+        normalized = dict(src)
+        normalized["listing_start_urls"] = listing_start_urls
+        included_sources.append(normalized)
+
+    return {
+        "job": job,
+        "included_sources": included_sources,
+        "excluded_sources": excluded_sources,
     }
 

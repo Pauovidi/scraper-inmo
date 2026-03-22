@@ -73,6 +73,15 @@ def _normalize_domain(url: str) -> str:
     return domain or "unknown-domain"
 
 
+def _normalize_domain_value(value: str) -> str:
+    candidate = value.strip().lower()
+    if not candidate:
+        return "unknown-domain"
+    if "://" not in candidate:
+        candidate = f"https://{candidate}"
+    return _normalize_domain(candidate)
+
+
 def _stable_snapshot_id(url: str) -> str:
     return hashlib.sha256(url.strip().encode("utf-8")).hexdigest()[:16]
 
@@ -83,7 +92,12 @@ def _simple_slugify(value: str) -> str:
     return value.strip("-")
 
 
-def _slug_or_hash(url: str) -> str:
+def _slug_or_hash(url: str, slug_hint: str | None = None) -> str:
+    if slug_hint:
+        slug = external_slugify(slug_hint) if external_slugify else _simple_slugify(slug_hint)
+        if slug:
+            return slug
+
     parsed = urlparse(url)
     leaf = parsed.path.rstrip("/").split("/")[-1] if parsed.path else ""
     slug = external_slugify(leaf) if external_slugify else _simple_slugify(leaf)
@@ -226,6 +240,11 @@ def archive_url(
     timeout: int = 20,
     output_base_dir: Path | None = None,
     index_file: Path | None = None,
+    page_kind_hint: str | None = None,
+    snapshot_role: str | None = None,
+    source_domain_override: str | None = None,
+    slug_hint: str | None = None,
+    extra_meta: dict[str, Any] | None = None,
 ) -> ArchiveResult:
     logger = get_logger("archiver")
     start = time.perf_counter()
@@ -233,9 +252,9 @@ def archive_url(
     run_date = timestamp[:10]
     run_id = _make_run_id()
 
-    domain = _normalize_domain(url)
+    domain = _normalize_domain_value(source_domain_override) if source_domain_override else _normalize_domain(url)
     snapshot_id = _stable_snapshot_id(url)
-    slug_or_hash = _slug_or_hash(url)
+    slug_or_hash = _slug_or_hash(url, slug_hint=slug_hint)
 
     base_dir = output_base_dir if output_base_dir is not None else snapshots_dir()
     out_dir = base_dir / domain / run_date / slug_or_hash / run_id
@@ -367,7 +386,12 @@ def archive_url(
         "markdown_hash": markdown_hash,
         "content_hash_preferred": content_hash_preferred,
         "dedup": dedup,
+        "page_kind_hint": page_kind_hint,
+        "snapshot_role": snapshot_role or "default",
     }
+
+    if extra_meta:
+        meta["extra"] = extra_meta
 
     meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -390,6 +414,8 @@ def archive_url(
             "content_hash_preferred": content_hash_preferred,
             "is_duplicate_content": dedup.get("is_duplicate_content", False),
             "match_reason": dedup.get("match_reason", "none"),
+            "page_kind_hint": page_kind_hint,
+            "snapshot_role": snapshot_role or "default",
         }
         append_snapshot_index_entry(index_entry, index_file=index_file)
 

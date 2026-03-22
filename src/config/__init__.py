@@ -3,6 +3,7 @@ from src.config.loader import (
     load_jobs,
     load_source_by_domain,
     load_sources,
+    resolve_job_harvest_plan,
     resolve_job_plan,
     resolve_job_sources,
     resolve_job_start_urls,
@@ -14,6 +15,7 @@ __all__ = [
     "load_jobs",
     "load_job_by_name",
     "resolve_job_sources",
+    "resolve_job_harvest_plan",
     "resolve_job_start_urls",
     "resolve_job_plan",
 ]
