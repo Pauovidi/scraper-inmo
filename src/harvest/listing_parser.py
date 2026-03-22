@@ -242,6 +242,8 @@ def _candidate_from_anchor(
     if not href:
         return None, "missing_href"
 
+    effective_card = _find_card(anchor) if getattr(card, "name", "") == "a" else card
+
     candidate_url = normalize_candidate_url_for_strategy(strategy, href, base_url=base_url)
     if not candidate_url:
         return None, "invalid_candidate_url"
@@ -255,16 +257,16 @@ def _candidate_from_anchor(
             candidate_url=candidate_url,
         )
 
-    raw_text = _clean_text(card.get_text(" ", strip=True))
+    raw_text = _clean_text(effective_card.get_text(" ", strip=True))
     if not raw_text or len(raw_text) < 12:
         return None, "card_text_too_short"
 
-    title_text = _title_text(card, anchor)
-    price_text = _find_text_by_attr(card, ("price", "amount")) or _regex_text(PRICE_TEXT_RE, raw_text)
-    location_text = _location_text(card, raw_text)
-    surface_text = _find_text_by_attr(card, ("surface", "size", "meters")) or _regex_text(SURFACE_TEXT_RE, raw_text)
-    rooms_text = _find_text_by_attr(card, ("room", "habit")) or _regex_text(ROOMS_TEXT_RE, raw_text)
-    external_id = _extract_external_id(card, candidate_url, source_domain)
+    title_text = _title_text(effective_card, anchor)
+    price_text = _find_text_by_attr(effective_card, ("price", "amount")) or _regex_text(PRICE_TEXT_RE, raw_text)
+    location_text = _location_text(effective_card, raw_text)
+    surface_text = _find_text_by_attr(effective_card, ("surface", "size", "meters")) or _regex_text(SURFACE_TEXT_RE, raw_text)
+    rooms_text = _find_text_by_attr(effective_card, ("room", "habit")) or _regex_text(ROOMS_TEXT_RE, raw_text)
+    external_id = _extract_external_id(effective_card, candidate_url, source_domain)
 
     price_value, _ = normalize_price(price_text, raw_text)
     provisional = {
