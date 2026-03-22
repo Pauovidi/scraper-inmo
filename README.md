@@ -10,6 +10,17 @@ Proyecto Python incremental con baseline legacy preservado y una v2 orientada a 
 
 El scraper técnico sigue funcionando por CLI. La v2 reutiliza sus outputs para presentar resultados de forma más útil y mantenible.
 
+## Demo candidate
+
+Estado actual de demo:
+
+- la v2 cliente ya muestra nuevos del día, histórico, estados y separación por portal
+- la capa de `listing harvester` ya aporta volumen útil real, con mejor rendimiento especialmente en `pisos`
+- `fotocasa` mantiene señal útil estable en demo
+- `milanuncios`, `idealista` y `yaencontre` siguen con cobertura más variable según bloqueo del origen
+
+La demo está pensada para enseñar un producto ya utilizable, no una cobertura homogénea perfecta en todos los portales.
+
 ## Listing Harvester
 
 Esta iteración añade una capa nueva de adquisición orientada a volumen:
