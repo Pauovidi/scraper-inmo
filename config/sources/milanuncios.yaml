@@ -13,10 +13,27 @@
   "listing_start_urls": [
     "https://www.milanuncios.com/alquiler-de-naves-industriales-en-vizcaya/"
   ],
-  "max_listing_pages": 3,
+  "max_listing_pages": 5,
   "listing_page_start": 1,
   "listing_page_param": "pagina",
   "listing_first_page_uses_start_url": true,
-  "notes": "Configuración inicial de harvesting por listados para Milanuncios.",
+  "listing_card_selectors": [
+    "article[data-testid='AD_CARD']",
+    "article[data-testid*='AD_CARD']",
+    "article",
+    "[class*='AdCard']"
+  ],
+  "listing_detail_url_patterns": [
+    "-\\d+\\.htm(?:\\?|$)"
+  ],
+  "listing_reject_url_patterns": [
+    "/inmobiliaria",
+    "/profesional",
+    "/mis-anuncios",
+    "/buscador",
+    "/login",
+    "/registro"
+  ],
+  "notes": "Harvest paginado de Milanuncios reforzado con cards AD_CARD y detalle .htm para mejorar recall real.",
   "timeout_seconds": 20
 }

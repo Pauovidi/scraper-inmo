@@ -24,6 +24,14 @@ Esta iteración añade una capa nueva de adquisición orientada a volumen:
    - solo archiva detalle para candidatos nuevos o relevantes
    - reutiliza el pipeline actual de snapshots, parse, export y publish
 
+Ahora la adquisición corre además por workers de portal en paralelo ligero, con separación explícita para:
+
+- `fotocasa`
+- `idealista`
+- `milanuncios`
+- `pisos`
+- `yaencontre`
+
 La idea es subir recall sin rehacer la v2 de producto ni romper `publish/history`.
 
 ## Qué hace la v2
@@ -113,7 +121,9 @@ La deduplicación histórica usa esta prioridad:
 1. lee las `sources` del job
 2. usa `listing_start_urls` y `max_listing_pages` por portal
 3. construye la paginación con `listing_page_param` o `listing_page_url_template`
-4. archiva cada página de listado con el archiver existente, etiquetándola como `listing_page`
+4. ejecuta workers por portal con `ThreadPoolExecutor`
+5. archiva cada página de listado con el archiver existente, etiquetándola como `listing_page`
+6. guarda el HTML real como fuente primaria de extracción
 5. parsea el HTML archivado para extraer cards rápidas:
    - `source_domain`
    - `candidate_url`
@@ -125,13 +135,18 @@ La deduplicación histórica usa esta prioridad:
    - `external_id`
    - `listing_key` provisional
    - `listing_page_url` origen
-6. deduplica candidatos dentro de la ejecución y entre páginas del mismo portal
-7. marca qué candidatos pasan a detalle:
+7. deduplica candidatos dentro de la ejecución y entre páginas del mismo portal
+8. escribe un resumen de embudo por portal con métricas de:
+   - páginas intentadas/ok/error
+   - cards detectadas
+   - candidates emitidos/deduplicados/descartados
+   - candidates enviados a detalle
+9. marca qué candidatos pasan a detalle:
    - nuevos
    - o vistos en días anteriores
    - excluyendo los ya vistos hoy en histórico
 
-`run-job-full` lo ejecuta automáticamente antes de `archive-discovered`, de forma que el enriquecimiento de detalle consuma más candidatos sin cambiar la publicación ni el histórico.
+`run-job-full` lo ejecuta automáticamente antes de `archive-discovered`, de forma que el enriquecimiento de detalle consuma más candidatos sin cambiar la publicación ni el histórico. Al final del pipeline se genera además un `funnel_report` que cruza harvest + archive + parse por portal.
 
 ## Histórico y estados
 
@@ -230,6 +245,7 @@ data/
   harvest/
     YYYY-MM-DD/
       summary.json
+      funnel_report_<job>_<run_id>.json
       fotocasa/
         candidates.jsonl
         summary.json
@@ -260,6 +276,26 @@ data/
 
 Los snapshots HTML reales de listados siguen guardándose en `data/snapshots/`, reutilizando el archiver existente. `data/harvest/` conserva los manifiestos y candidatos deduplicados de cada ejecución diaria.
 
+`summary.json` diario contiene:
+
+- `execution_mode`
+- `max_workers`
+- `portal_summaries`
+- `totals`
+- `errors`
+
+Cada `portal_summaries.<portal>` incluye como mínimo:
+
+- `listing_pages_attempted`
+- `listing_pages_ok`
+- `listing_pages_error`
+- `cards_detected`
+- `candidates_emitted`
+- `candidates_deduped_out`
+- `candidates_rejected_by_rules`
+- `candidates_sent_to_detail`
+- `rejection_reasons`
+
 ## Tests
 
 ```powershell
@@ -269,8 +305,11 @@ python -m unittest discover -s tests -p "test_*.py" -v
 ## Limitaciones actuales
 
 - La cobertura real sigue dependiendo de las fuentes que respondan bien.
+- `idealista` y `yaencontre` siguen penalizados por `403` en validación real.
 - La paginación está soportada por configuración simple (`param` o `template`), sin resolver todavía todos los patrones complejos de cada portal.
 - La extracción de cards es rápida y deliberadamente heurística; prioriza volumen y puede dejar campos parciales en algunos portales.
+- `pisos` mejora recall desde listados, pero todavía necesita más afinado para convertir mejor ese volumen en detalle archivado útil.
+- `milanuncios` depende todavía del parser genérico para detalle; parte del volumen llega a parse parcial y no a parse `ok`.
 - `harvest-listings` persiste una vista diaria simple en `data/harvest/YYYY-MM-DD/`; si se reejecuta varias veces el mismo día, actualiza esos ficheros.
 - La representación por portal en la interfaz ya existe para 5 portales, aunque algunos puedan no aportar datos en una ejecución concreta.
 - No hay panel multiusuario, autenticación ni CRM.

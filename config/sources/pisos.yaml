@@ -3,7 +3,7 @@
   "enabled": true,
   "mode": "seed_only",
   "start_urls": [
-    "https://www.pisos.com/alquiler/"
+    "https://www.pisos.com/alquiler/naves-vizcaya_bizkaia/"
   ],
   "rate_limit_seconds": 2,
   "login_allowed": false,
@@ -11,12 +11,31 @@
   "harvest_enabled": true,
   "parser_key": "pisos_detail",
   "listing_start_urls": [
-    "https://www.pisos.com/alquiler/"
+    "https://www.pisos.com/alquiler/naves-vizcaya_bizkaia/"
   ],
-  "max_listing_pages": 3,
+  "max_listing_pages": 4,
   "listing_page_start": 1,
-  "listing_page_param": "pagina",
+  "listing_page_url_template": "{base}{page}/",
   "listing_first_page_uses_start_url": true,
-  "notes": "Seed ajustada para validación smoke y harvesting paginado con heurísticas genéricas.",
+  "listing_card_selectors": [
+    "a.ad-preview__title[href]",
+    "[class*='ad-preview']",
+    "[class*='property']"
+  ],
+  "listing_detail_url_patterns": [
+    "/alquilar/[^/]+/\\d+(?:_[^/]+)?/?$",
+    "/alquilar/[^/]*-\\d+(?:_[^/]+)?/?$",
+    "/inmueble/\\d+/?$"
+  ],
+  "listing_reject_url_patterns": [
+    "/alquiler/?$",
+    "/venta/?$",
+    "/naves-vizcaya_bizkaia/\\d+/?$",
+    "/inmobiliaria",
+    "/agencia",
+    "/mapa",
+    "/obra-nueva"
+  ],
+  "notes": "Seed provincial real de Bizkaia con paginación por path para recuperar volumen útil desde listados.",
   "timeout_seconds": 20
 }

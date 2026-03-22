@@ -96,6 +96,9 @@ def _page_kind(url: str, links_count: int, has_price: bool, has_surface: bool, h
     if any(token in low for token in detail_tokens):
         return "detail"
 
+    if "milanuncios.com" in low and re.search(r"\.htm(?:\?|$)", low) and has_price and has_surface:
+        return "detail"
+
     if re.search(r"\.htm(?:\?|$)", low) and has_price and has_surface:
         return "detail"
 
@@ -144,7 +147,7 @@ def parse_generic_snapshot(bundle: SnapshotBundle, parser_key: str = "generic") 
     page_kind = _page_kind(
         meta.get("url_final", ""),
         len(links),
-        bool(price_value),
+        bool(price_text or price_value),
         bool(surface_sqm),
         bool(rooms_count),
         title,

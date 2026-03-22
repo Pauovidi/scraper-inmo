@@ -168,9 +168,12 @@ class HarvestRunnerTests(unittest.TestCase):
 
             portal_summary = summary["portal_summaries"]["idealista"]
             self.assertEqual(portal_summary["listing_pages_requested"], 2)
+            self.assertEqual(portal_summary["listing_pages_ok"], 2)
+            self.assertEqual(portal_summary["cards_detected"], 3)
             self.assertEqual(portal_summary["candidates_unique_count"], 2)
             self.assertEqual(portal_summary["candidates_passed_to_detail_count"], 1)
             self.assertEqual(portal_summary["candidates_skipped_known_today_count"], 1)
+            self.assertEqual(summary["execution_mode"], "parallel_by_portal")
 
             candidates_path = Path(portal_summary["candidates_path"])
             self.assertTrue(candidates_path.exists())
@@ -187,4 +190,3 @@ class HarvestRunnerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

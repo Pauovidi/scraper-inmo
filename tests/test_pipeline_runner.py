@@ -58,9 +58,23 @@ class PipelineRunnerTests(unittest.TestCase):
                     {
                         "job_name": job_name,
                         "linked_run_id": linked_run_id,
+                        "harvest_date": "2026-03-22",
                         "candidate_count": 3,
                         "selected_for_detail_count": 2,
                         "errors_count": 0,
+                        "portal_summaries": {
+                            "idealista": {
+                                "source_domain": "idealista.com",
+                                "listing_pages_attempted": 2,
+                                "listing_pages_ok": 1,
+                                "listing_pages_error": 1,
+                                "cards_detected": 3,
+                                "candidates_emitted": 2,
+                                "candidates_deduped_out": 0,
+                                "candidates_rejected_by_rules": 1,
+                                "candidates_sent_to_detail": 1,
+                            }
+                        },
                         "data_root": str(harvest_summary_path.parent),
                         "discovery_merge": {
                             "discovered_output_path": str(discovered_out),
@@ -74,9 +88,23 @@ class PipelineRunnerTests(unittest.TestCase):
             return {
                 "job_name": job_name,
                 "linked_run_id": linked_run_id,
+                "harvest_date": "2026-03-22",
                 "candidate_count": 3,
                 "selected_for_detail_count": 2,
                 "errors_count": 0,
+                "portal_summaries": {
+                    "idealista": {
+                        "source_domain": "idealista.com",
+                        "listing_pages_attempted": 2,
+                        "listing_pages_ok": 1,
+                        "listing_pages_error": 1,
+                        "cards_detected": 3,
+                        "candidates_emitted": 2,
+                        "candidates_deduped_out": 0,
+                        "candidates_rejected_by_rules": 1,
+                        "candidates_sent_to_detail": 1,
+                    }
+                },
                 "data_root": str(harvest_summary_path.parent),
                 "discovery_merge": {
                     "discovered_output_path": str(discovered_out),
@@ -97,6 +125,13 @@ class PipelineRunnerTests(unittest.TestCase):
                         "partial_count": 0,
                         "error_count": 0,
                         "archived_snapshot_paths": [str(tmp_path / "snapshots" / "x")],
+                        "results": [
+                            {
+                                "source_domain": "idealista.com",
+                                "status": "ok",
+                                "snapshot_path": str(tmp_path / "snapshots" / "x"),
+                            }
+                        ],
                     }
                 ),
                 encoding="utf-8",
@@ -106,8 +141,11 @@ class PipelineRunnerTests(unittest.TestCase):
         def fake_parse(*, job_name: str, run_id: str):
             calls["parse"] += 1
             parsed_details.parent.mkdir(parents=True, exist_ok=True)
-            parsed_details.write_text("{}\n", encoding="utf-8")
-            parse_summary.write_text(json.dumps({"parsed_details_path": str(parsed_details)}), encoding="utf-8")
+            parsed_details.write_text(
+                json.dumps({"source_domain": "idealista.com", "page_kind": "detail", "parse_status": "ok"}) + "\n",
+                encoding="utf-8",
+            )
+            parse_summary.write_text(json.dumps({"parsed_details_path": str(parsed_details), "errors": []}), encoding="utf-8")
             export_jsonl.parent.mkdir(parents=True, exist_ok=True)
             export_jsonl.write_text("{}\n", encoding="utf-8")
             export_csv.write_text("source_domain,price_value\n", encoding="utf-8")
@@ -147,6 +185,8 @@ class PipelineRunnerTests(unittest.TestCase):
             self.assertEqual(manifest["discovery_run_id"], "jobrun_001")
             self.assertIn("export_paths", manifest)
             self.assertIn("harvest_counts", manifest)
+            self.assertIn("funnel_report_path", manifest)
+            self.assertIn("portal_funnel_report", manifest)
 
             rows = list_pipeline_runs(index_file=tmp_path / "index" / "pipeline_runs_index.jsonl")
             self.assertEqual(len(rows), 1)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
@@ -50,3 +50,17 @@ class ListingCandidate:
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
+
+@dataclass
+class ListingParseReport:
+    cards_detected: int = 0
+    candidates_emitted: int = 0
+    candidates_deduped_out: int = 0
+    candidates_rejected_by_rules: int = 0
+    rejection_reasons: dict[str, int] = field(default_factory=dict)
+    candidates: list[ListingCandidate] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["candidates"] = [candidate.to_dict() for candidate in self.candidates]
+        return payload

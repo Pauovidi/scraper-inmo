@@ -12,12 +12,20 @@ class ConfigLoaderTests(unittest.TestCase):
     def test_load_sources_from_repo_config(self) -> None:
         sources = load_sources()
         domains = {item["domain"] for item in sources}
+        self.assertIn("fotocasa.es", domains)
         self.assertIn("idealista.com", domains)
         self.assertIn("milanuncios.com", domains)
         self.assertIn("pisos.com", domains)
+        self.assertIn("yaencontre.com", domains)
         by_domain = {item["domain"]: item for item in sources}
         self.assertTrue(by_domain["fotocasa.es"]["harvest_enabled"])
-        self.assertGreaterEqual(by_domain["idealista.com"]["max_listing_pages"], 1)
+        self.assertGreaterEqual(by_domain["idealista.com"]["max_listing_pages"], 4)
+        self.assertGreaterEqual(by_domain["milanuncios.com"]["max_listing_pages"], 5)
+        self.assertEqual(
+            by_domain["pisos.com"]["listing_start_urls"][0],
+            "https://www.pisos.com/alquiler/naves-vizcaya_bizkaia/",
+        )
+        self.assertGreaterEqual(len(by_domain["yaencontre.com"]["listing_start_urls"]), 2)
 
     def test_load_jobs_and_resolve_start_urls(self) -> None:
         jobs = load_jobs()

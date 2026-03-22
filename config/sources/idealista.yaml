@@ -13,10 +13,31 @@
   "listing_start_urls": [
     "https://www.idealista.com/alquiler-naves/bizkaia/"
   ],
-  "max_listing_pages": 3,
+  "max_listing_pages": 4,
   "listing_page_start": 1,
   "listing_page_url_template": "https://www.idealista.com/alquiler-naves/bizkaia/pagina-{page}.htm",
   "listing_first_page_uses_start_url": true,
+  "listing_card_selectors": [
+    "article",
+    "li",
+    "[data-testid*='listing']",
+    "[data-testid*='property']",
+    "[class*='item']",
+    "[class*='card']"
+  ],
+  "listing_detail_url_patterns": [
+    "/inmueble/\\d+/?$"
+  ],
+  "listing_reject_url_patterns": [
+    "/agencia",
+    "/obra-nueva",
+    "/perfil",
+    "/mapa",
+    "/inmobiliaria",
+    "/favoritos",
+    "/publicar",
+    "/login"
+  ],
   "notes": "Fuente preparada para harvesting paginado y enriquecimiento posterior de detalle.",
   "timeout_seconds": 20
 }

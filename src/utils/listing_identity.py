@@ -75,7 +75,7 @@ def extract_external_id(source_domain: Any, url: Any) -> str | None:
         "fotocasa": [r"/(\d+)/d$", r"/(\d+)/?$"],
         "idealista": [r"/inmueble/(\d+)/?$", r"/(\d+)/?$"],
         "milanuncios": [r"-(\d+)\.htm$", r"/(\d+)\.htm$"],
-        "pisos": [r"/(\d+)_", r"/(\d+)(?:/)?$"],
+        "pisos": [r"-(\d{6,})_\d+(?:/)?$", r"/(\d{6,})_\d+(?:/)?$", r"/(\d+)_", r"/(\d+)(?:/)?$"],
         "yaencontre": [r"/inmueble/(\d+)/?$", r"/(\d+)(?:/)?$"],
     }
 
@@ -130,4 +130,3 @@ def resolve_listing_identity(record: dict[str, Any]) -> dict[str, str]:
         "dedupe_method": "fingerprint",
         "listing_key": f"{source_domain}:fingerprint:{fingerprint}",
     }
-

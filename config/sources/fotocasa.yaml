@@ -11,13 +11,18 @@
   "harvest_enabled": true,
   "parser_key": "fotocasa_detail",
   "listing_start_urls": [
+    "https://www.fotocasa.es/es/alquiler/naves-industriales/bizkaia-provincia/todas-las-zonas/l",
+    "https://www.fotocasa.es/es/comprar/naves-industriales/bizkaia-provincia/todas-las-zonas/l",
+    "https://www.fotocasa.es/es/alquiler/naves-industriales/poi/cercanias-zorrotza-bizkaia/l",
+    "https://www.fotocasa.es/es/alquiler/naves-industriales/bizkaia-provincia/duranguesado/l",
+    "https://www.fotocasa.es/es/alquiler/naves-industriales/bizkaia-provincia/uribe/l",
     "https://www.fotocasa.es/es/comprar/locales/bizkaia-provincia/todas-las-zonas/l"
   ],
-  "max_listing_pages": 3,
+  "max_listing_pages": 4,
   "listing_page_start": 1,
   "listing_page_param": "pagina",
   "listing_first_page_uses_start_url": true,
-  "notes": "Configuración base para futuros parsers por portal.",
+  "notes": "Seed ampliada de Fotocasa con naves industriales por alquiler/venta y zonas Bizkaia de alto recall.",
   "timeout_seconds": 20
 }
 

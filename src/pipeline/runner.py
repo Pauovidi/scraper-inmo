@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.discovery.runner import archive_discovered, discover_job_run
+from src.harvest.reporting import build_funnel_report
 from src.harvest.runner import harvest_listings
 from src.jobs.runner import run_job
 from src.parsers.runner import parse_discovered
@@ -274,6 +275,20 @@ def run_job_full(
             step_statuses["parse-discovered"] = "failed"
             _append_error(errors_summary, "parse-discovered", exc)
             log_fn(f"[pipeline] step=parse-discovered status=failed error={type(exc).__name__}")
+
+    if harvest_summary_path and job_run_id:
+        try:
+            funnel_report = build_funnel_report(
+                job_name=job_name,
+                run_id=str(job_run_id),
+                harvest_summary_path=harvest_summary_path,
+            )
+            manifest["funnel_report_path"] = funnel_report.get("output_path")
+            manifest["portal_funnel_report"] = funnel_report.get("portal_reports", {})
+            manifest["funnel_totals"] = funnel_report.get("totals", {})
+        except Exception as exc:
+            _append_error(errors_summary, "build-funnel-report", exc)
+            log_fn(f"[pipeline] step=build-funnel-report status=failed error={type(exc).__name__}")
 
     counts = manifest.get("archive_discovered_counts", {})
     has_nonfatal_errors = bool((counts.get("error_count", 0) or 0) > 0)
