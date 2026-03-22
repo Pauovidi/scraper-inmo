@@ -333,6 +333,13 @@ def extract_listing_candidates_with_report(
     if not html:
         return report
 
+    if source_domain == "milanuncios.com":
+        from src.harvest.portals.milanuncios import milanuncios_is_blocked_listing_html
+
+        if milanuncios_is_blocked_listing_html(html):
+            report.rejection_reasons["blocked_listing_page"] = 1
+            return report
+
     strategy = get_portal_strategy(source_domain, source_config=source_config)
 
     if BeautifulSoup is None:

@@ -20,8 +20,11 @@
   "listing_card_selectors": [
     "article[data-testid='AD_CARD']",
     "article[data-testid*='AD_CARD']",
-    "article",
-    "[class*='AdCard']"
+    "[data-testid='AD_CARD']"
+  ],
+  "listing_detail_link_selectors": [
+    "a.ma-AdCardListingV2-TitleLink[href]",
+    "a[href$='.htm']"
   ],
   "listing_detail_url_patterns": [
     "-\\d+\\.htm(?:\\?|$)"
@@ -34,6 +37,12 @@
     "/login",
     "/registro"
   ],
-  "notes": "Harvest paginado de Milanuncios reforzado con cards AD_CARD y detalle .htm para mejorar recall real.",
+  "listing_block_patterns": [
+    "Pardon Our Interruption",
+    "geetest",
+    "captcha",
+    "Access Denied"
+  ],
+  "notes": "Harvest paginado de Milanuncios reforzado con cards AD_CARD, detalle .htm y detección de bloqueo/captcha para no contaminar el funnel.",
   "timeout_seconds": 20
 }

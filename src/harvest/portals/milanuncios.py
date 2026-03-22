@@ -8,6 +8,14 @@ MILANUNCIOS_DETAIL_PATTERNS = [
     r"-\d+\.htm(?:\?|$)",
 ]
 
+MILANUNCIOS_LISTING_BLOCK_PATTERNS = [
+    r"pardon our interruption",
+    r"geetest",
+    r"captcha",
+    r"access denied",
+    r"noindex, nofollow",
+]
+
 MILANUNCIOS_REJECT_PATTERNS = [
     r"/inmobiliaria",
     r"/profesional",
@@ -40,18 +48,28 @@ def milanuncios_is_detail_candidate_url(url: str) -> bool:
     return any(re.search(pattern, low) for pattern in MILANUNCIOS_DETAIL_PATTERNS)
 
 
+def milanuncios_is_blocked_listing_html(html: str | None) -> bool:
+    low = (html or "").lower()
+    if not low:
+        return False
+    return any(re.search(pattern, low) for pattern in MILANUNCIOS_LISTING_BLOCK_PATTERNS)
+
+
+MILANUNCIOS_CARD_SELECTORS = (
+    "article[data-testid='AD_CARD']",
+    "article[data-testid*='AD_CARD']",
+    "[data-testid='AD_CARD']",
+)
+
+MILANUNCIOS_DETAIL_LINK_SELECTORS = (
+    "a.ma-AdCardListingV2-TitleLink[href]",
+    "a[href$='.htm']",
+)
+
 MILANUNCIOS_STRATEGY = PortalStrategy(
     source_domain="milanuncios.com",
-    card_selectors=(
-        "article[data-testid='AD_CARD']",
-        "article[data-testid*='AD_CARD']",
-        "article",
-        "[class*='AdCard']",
-    ),
-    detail_link_selectors=(
-        "a.ma-AdCardListingV2-TitleLink[href]",
-        "a[href$='.htm']",
-    ),
+    card_selectors=MILANUNCIOS_CARD_SELECTORS,
+    detail_link_selectors=MILANUNCIOS_DETAIL_LINK_SELECTORS,
     detail_patterns=tuple(MILANUNCIOS_DETAIL_PATTERNS),
     reject_patterns=tuple(MILANUNCIOS_REJECT_PATTERNS),
     query_drop_keys=MILANUNCIOS_QUERY_DROP_KEYS,

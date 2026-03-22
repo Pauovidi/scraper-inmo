@@ -68,6 +68,15 @@ def _merge_strategies(strategy: PortalStrategy, source_config: Mapping[str, obje
         for item in (source_config.get("listing_card_selectors") or strategy.card_selectors)
         if str(item).strip()
     )
+    detail_link_selectors = tuple(
+        str(item)
+        for item in (
+            source_config.get("listing_detail_link_selectors")
+            or source_config.get("detail_link_selectors")
+            or strategy.detail_link_selectors
+        )
+        if str(item).strip()
+    )
     detail_patterns = tuple(
         str(item)
         for item in (source_config.get("listing_detail_url_patterns") or strategy.detail_patterns)
@@ -81,7 +90,7 @@ def _merge_strategies(strategy: PortalStrategy, source_config: Mapping[str, obje
     return PortalStrategy(
         source_domain=strategy.source_domain,
         card_selectors=card_selectors or strategy.card_selectors,
-        detail_link_selectors=strategy.detail_link_selectors,
+        detail_link_selectors=detail_link_selectors or strategy.detail_link_selectors,
         detail_patterns=detail_patterns or strategy.detail_patterns,
         reject_patterns=reject_patterns or strategy.reject_patterns,
         query_drop_keys=strategy.query_drop_keys,
