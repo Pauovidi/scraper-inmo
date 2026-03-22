@@ -2,12 +2,15 @@
   "job_name": "bizkaia_naves_smoke",
   "sources": [
     "fotocasa.es",
-    "pisos.com"
+    "idealista.com",
+    "milanuncios.com",
+    "pisos.com",
+    "yaencontre.com"
   ],
   "filters": {
     "province": "bizkaia",
     "property_type": "nave"
   },
-  "max_urls": 4,
-  "notes": "Job de validación controlada con fuentes que actualmente responden y bajo volumen."
+  "max_urls": 5,
+  "notes": "Job de validación controlada con cobertura explícita de los cinco portales objetivo."
 }

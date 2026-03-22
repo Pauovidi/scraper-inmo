@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from urllib.parse import urlparse
 
 try:
     from bs4 import BeautifulSoup  # type: ignore
@@ -15,6 +16,8 @@ from src.utils.time_utils import now_utc_iso
 PRICE_RE = re.compile(r"\d[\d\.,\s]{2,}\s?€|€\s?\d[\d\.,\s]{2,}", re.IGNORECASE)
 SURFACE_RE = re.compile(r"\b\d{1,4}\s?(?:m2|m²|metros?)\b", re.IGNORECASE)
 ROOMS_RE = re.compile(r"\b\d{1,2}\s?(?:hab(?:itaciones)?\.?|dormitorios|rooms?)\b", re.IGNORECASE)
+DETAIL_URL_RE = re.compile(r"/alquilar/[^/]+-\d+(?:_\d+)?/?$", re.IGNORECASE)
+LISTING_URL_RE = re.compile(r"/alquiler/|/venta/|/buscar/|/resultados/", re.IGNORECASE)
 
 
 def _compact(text: str | None) -> str | None:
@@ -38,6 +41,17 @@ def _from_selectors(soup, selectors: list[str]) -> str | None:
     return None
 
 
+def _meta_content(soup, selectors: list[str]) -> str | None:
+    for selector in selectors:
+        node = soup.select_one(selector)
+        if not node:
+            continue
+        content = _compact(node.get("content"))
+        if content:
+            return content
+    return None
+
+
 def _regex_find(pattern: re.Pattern[str], text: str | None) -> str | None:
     if not text:
         return None
@@ -47,14 +61,33 @@ def _regex_find(pattern: re.Pattern[str], text: str | None) -> str | None:
     return _compact(match.group(0))
 
 
-def _resolve_page_kind(url: str, links_count: int, has_price: bool, has_surface: bool) -> str:
+def _resolve_page_kind(
+    url: str,
+    *,
+    links_count: int,
+    has_price: bool,
+    has_surface: bool,
+    has_description: bool,
+    title: str | None,
+) -> str:
     low = url.lower()
+    path = urlparse(low).path
+
+    if LISTING_URL_RE.search(path):
+        return "listing"
+
+    if DETAIL_URL_RE.search(path):
+        return "detail"
+
     if any(token in low for token in ["/inmueble/", "/ficha", "/detalle"]):
         return "detail"
+
+    if has_price and (has_surface or has_description):
+        if links_count <= 60 or "en alquiler" in (title or "").lower():
+            return "detail"
+
     if any(token in low for token in ["/alquiler", "/venta", "/buscar", "resultados"]) and links_count >= 8:
         return "listing"
-    if has_price and has_surface and links_count <= 15:
-        return "detail"
     return "unknown"
 
 
@@ -79,6 +112,8 @@ def parse_pisos_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "pisos
             soup,
             [
                 "meta[property='og:title']",
+                "meta[name='twitter:title']",
+                "title",
                 "h1",
                 "[class*='title']",
             ],
@@ -99,8 +134,10 @@ def parse_pisos_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "pisos
             soup,
             [
                 "[class*='location']",
+                "[class*='subtitle']",
                 "[class*='address']",
                 "[class*='zone']",
+                "meta[property='og:locale']",
             ],
         )
 
@@ -116,6 +153,14 @@ def parse_pisos_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "pisos
                 "article",
             ],
         )
+        if not description_text:
+            description_text = _meta_content(
+                soup,
+                [
+                    "meta[property='og:description']",
+                    "meta[name='description']",
+                ],
+            )
 
         for a in soup.find_all("a"):
             href = a.get("href")
@@ -162,6 +207,8 @@ def parse_pisos_detail_snapshot(bundle: SnapshotBundle, parser_key: str = "pisos
         links_count=len(extracted_links),
         has_price=bool(price_text),
         has_surface=bool(surface_text),
+        has_description=bool(description_text),
+        title=title,
     )
 
     dedup_links: list[str] = []

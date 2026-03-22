@@ -39,5 +39,17 @@ def discovered_dir() -> Path:
     return data_dir() / "discovered"
 
 
+def harvest_dir() -> Path:
+    return data_dir() / "harvest"
+
+
 def exports_dir() -> Path:
     return data_dir() / "exports"
+
+
+def history_dir() -> Path:
+    return data_dir() / "history"
+
+
+def published_dir() -> Path:
+    return data_dir() / "published"

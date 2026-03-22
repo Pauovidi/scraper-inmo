@@ -36,6 +36,8 @@ Thumbs.db
 Desktop.ini
 .vscode/
 .idea/
+.codex/
+.streamlit/
 
 # Data outputs (keep folder structure)
 data/raw/*
@@ -62,14 +64,26 @@ data/job_runs/*
 data/parsed/*
 !data/parsed/.gitkeep
 
+# History runtime files
+data/history/*
+!data/history/.gitkeep
+
 # Discovery outputs runtime files
 data/discovered/*
 !data/discovered/.gitkeep
+
+# Harvest outputs runtime files
+data/harvest/*
+!data/harvest/.gitkeep
 
 
 # Export outputs runtime files
 data/exports/*
 !data/exports/.gitkeep
+
+# Published outputs runtime files
+data/published/*
+!data/published/.gitkeep
 
 
 # Pipeline run runtime files

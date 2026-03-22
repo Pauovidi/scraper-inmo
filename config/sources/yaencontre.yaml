@@ -8,7 +8,16 @@
   "rate_limit_seconds": 2,
   "login_allowed": false,
   "archiver_enabled": true,
+  "harvest_enabled": true,
   "parser_key": "generic_listing",
-  "notes": "Seed inicial; pendiente parser dedicado.",
+  "listing_start_urls": [
+    "https://www.yaencontre.com/alquiler/naves/bizkaia",
+    "https://www.yaencontre.com/venta/naves/bizkaia"
+  ],
+  "max_listing_pages": 5,
+  "listing_page_start": 1,
+  "listing_page_param": "page",
+  "listing_first_page_uses_start_url": true,
+  "notes": "Seed inicial con harvesting paginado, entrada por alquiler/venta y heuristicas especificas para soportar 403 sin bloquear la iteracion.",
   "timeout_seconds": 20
 }

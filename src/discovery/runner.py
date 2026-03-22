@@ -133,21 +133,42 @@ def archive_discovered(
     partial_count = 0
     error_count = 0
     archived_snapshot_paths: list[str] = []
+    archive_results: list[dict[str, Any]] = []
 
-    for url in urls:
+    for index, url in enumerate(urls):
         if not url:
             continue
+        discovered_row = json.loads(lines[index])
+        result_row = {
+            "source_domain": discovered_row.get("source_domain"),
+            "discovered_url": url,
+            "status": "error",
+            "snapshot_path": None,
+        }
         try:
-            result = archive_url(url=url, timeout=20)
+            listing_page_url = str(discovered_row.get("listing_page_url") or "").strip()
+            request_headers = {"Referer": listing_page_url} if listing_page_url else None
+            result = archive_url(
+                url=url,
+                timeout=20,
+                request_headers=request_headers,
+                session_warmup_url=listing_page_url or None,
+            )
             archived_snapshot_paths.append(str(result.output_dir))
+            result_row["status"] = result.status
+            result_row["snapshot_path"] = str(result.output_dir)
+            if listing_page_url:
+                result_row["listing_page_url"] = listing_page_url
             if result.status == "ok":
                 ok_count += 1
             elif result.status == "partial":
                 partial_count += 1
             else:
                 error_count += 1
-        except Exception:
+        except Exception as exc:
             error_count += 1
+            result_row["error"] = f"{type(exc).__name__}: {exc}"
+        archive_results.append(result_row)
 
     summary = {
         "job_name": job_name,
@@ -157,6 +178,7 @@ def archive_discovered(
         "partial_count": partial_count,
         "error_count": error_count,
         "archived_snapshot_paths": archived_snapshot_paths,
+        "results": archive_results,
     }
     (out_dir / "archive_summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     return summary

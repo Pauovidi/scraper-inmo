@@ -4,10 +4,12 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from src.archiver.service import archive_url
 from src.discovery.extractor import discover_candidate_urls
-from src.discovery.runner import discover_job_run
+from src.discovery.runner import archive_discovered, discover_job_run
 from src.jobs.index import append_job_run_index_entry
 from src.parsers.snapshot_bridge import SnapshotBundle
 
@@ -122,6 +124,40 @@ class DiscoveryPipelineTests(unittest.TestCase):
             index_rows = [json.loads(line) for line in index_path.read_text(encoding="utf-8").splitlines() if line.strip()]
             self.assertEqual(len(index_rows), 1)
             self.assertEqual(index_rows[0]["run_id"], "run_001")
+
+    def test_archive_discovered_passes_listing_context_to_archiver(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            out_dir = tmp_path / "discovered" / "job_runs" / "job_demo" / "run_002"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            discovered_path = out_dir / "discovered_urls.jsonl"
+            discovered_path.write_text(
+                json.dumps(
+                    {
+                        "discovered_url": "https://www.pisos.com/alquilar/nave_industrial-errekaldeberri48002-62596158719_102200/",
+                        "source_domain": "pisos.com",
+                        "listing_page_url": "https://www.pisos.com/alquiler/naves-vizcaya_bizkaia/",
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            calls: list[dict[str, object]] = []
+
+            def fake_archive_url(**kwargs):
+                calls.append(kwargs)
+                snapshot_dir = tmp_path / "snapshots" / "row_1"
+                snapshot_dir.mkdir(parents=True, exist_ok=True)
+                return SimpleNamespace(status="ok", output_dir=snapshot_dir)
+
+            with patch("src.discovery.runner.archive_url", side_effect=fake_archive_url):
+                summary = archive_discovered(job_name="job_demo", run_id="run_002", output_root_dir=tmp_path / "discovered" / "job_runs")
+
+            self.assertEqual(summary["ok_count"], 1)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0]["session_warmup_url"], "https://www.pisos.com/alquiler/naves-vizcaya_bizkaia/")
+            self.assertEqual(calls[0]["request_headers"]["Referer"], "https://www.pisos.com/alquiler/naves-vizcaya_bizkaia/")
 
 
 if __name__ == "__main__":

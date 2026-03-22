@@ -16,6 +16,16 @@ class DiscoveredUrl:
     page_kind: str
     discovered_url: str
     discovered_at: str
+    external_id: str | None = None
+    candidate_listing_key: str | None = None
+    title_text: str | None = None
+    price_text: str | None = None
+    location_text: str | None = None
+    surface_text: str | None = None
+    rooms_text: str | None = None
+    listing_page_url: str | None = None
+    acquisition_type: str | None = None
+    selection_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

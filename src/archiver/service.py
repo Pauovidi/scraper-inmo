@@ -41,6 +41,17 @@ DEFAULT_USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/122.0.0.0 Safari/537.36"
 )
+DEFAULT_REQUEST_HEADERS = {
+    "User-Agent": DEFAULT_USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Dest": "document",
+}
 
 
 @dataclass
@@ -73,6 +84,15 @@ def _normalize_domain(url: str) -> str:
     return domain or "unknown-domain"
 
 
+def _normalize_domain_value(value: str) -> str:
+    candidate = value.strip().lower()
+    if not candidate:
+        return "unknown-domain"
+    if "://" not in candidate:
+        candidate = f"https://{candidate}"
+    return _normalize_domain(candidate)
+
+
 def _stable_snapshot_id(url: str) -> str:
     return hashlib.sha256(url.strip().encode("utf-8")).hexdigest()[:16]
 
@@ -83,7 +103,12 @@ def _simple_slugify(value: str) -> str:
     return value.strip("-")
 
 
-def _slug_or_hash(url: str) -> str:
+def _slug_or_hash(url: str, slug_hint: str | None = None) -> str:
+    if slug_hint:
+        slug = external_slugify(slug_hint) if external_slugify else _simple_slugify(slug_hint)
+        if slug:
+            return slug
+
     parsed = urlparse(url)
     leaf = parsed.path.rstrip("/").split("/")[-1] if parsed.path else ""
     slug = external_slugify(leaf) if external_slugify else _simple_slugify(leaf)
@@ -111,15 +136,38 @@ def _read_file_url(file_url: str) -> tuple[str, str, str | None]:
     return file_url, html, "text/html"
 
 
-def _fetch_html_requests(url: str, timeout: int) -> tuple[str, str, str | None]:
-    response = requests.get(url, headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=timeout)
+def _request_headers(extra_headers: dict[str, str] | None = None) -> dict[str, str]:
+    headers = dict(DEFAULT_REQUEST_HEADERS)
+    if extra_headers:
+        headers.update({key: value for key, value in extra_headers.items() if value})
+    return headers
+
+
+def _fetch_html_requests(
+    url: str,
+    timeout: int,
+    *,
+    request_headers: dict[str, str] | None = None,
+    session_warmup_url: str | None = None,
+) -> tuple[str, str, str | None]:
+    headers = _request_headers(request_headers)
+    session = requests.Session()
+    session.headers.update(headers)
+
+    if session_warmup_url:
+        try:
+            session.get(session_warmup_url, timeout=timeout)
+        except Exception:
+            pass
+
+    response = session.get(url, timeout=timeout)
     response.raise_for_status()
     response.encoding = response.encoding or response.apparent_encoding or "utf-8"
     return response.url, response.text, response.headers.get("Content-Type")
 
 
-def _fetch_html_urllib(url: str, timeout: int) -> tuple[str, str, str | None]:
-    request = Request(url, headers={"User-Agent": DEFAULT_USER_AGENT})
+def _fetch_html_urllib(url: str, timeout: int, *, request_headers: dict[str, str] | None = None) -> tuple[str, str, str | None]:
+    request = Request(url, headers=_request_headers(request_headers))
     with urlopen(request, timeout=timeout) as response:
         final_url = response.geturl()
         content_type = response.headers.get("Content-Type")
@@ -226,6 +274,13 @@ def archive_url(
     timeout: int = 20,
     output_base_dir: Path | None = None,
     index_file: Path | None = None,
+    page_kind_hint: str | None = None,
+    snapshot_role: str | None = None,
+    source_domain_override: str | None = None,
+    slug_hint: str | None = None,
+    extra_meta: dict[str, Any] | None = None,
+    request_headers: dict[str, str] | None = None,
+    session_warmup_url: str | None = None,
 ) -> ArchiveResult:
     logger = get_logger("archiver")
     start = time.perf_counter()
@@ -233,9 +288,9 @@ def archive_url(
     run_date = timestamp[:10]
     run_id = _make_run_id()
 
-    domain = _normalize_domain(url)
+    domain = _normalize_domain_value(source_domain_override) if source_domain_override else _normalize_domain(url)
     snapshot_id = _stable_snapshot_id(url)
-    slug_or_hash = _slug_or_hash(url)
+    slug_or_hash = _slug_or_hash(url, slug_hint=slug_hint)
 
     base_dir = output_base_dir if output_base_dir is not None else snapshots_dir()
     out_dir = base_dir / domain / run_date / slug_or_hash / run_id
@@ -269,23 +324,28 @@ def archive_url(
             if requests is not None:
                 methods_attempted.append("html_requests")
                 try:
-                    final_url, html, content_type = _fetch_html_requests(url=url, timeout=timeout)
+                    final_url, html, content_type = _fetch_html_requests(
+                        url=url,
+                        timeout=timeout,
+                        request_headers=request_headers,
+                        session_warmup_url=session_warmup_url,
+                    )
                     methods_succeeded.append("html_requests")
                     html_source = "requests"
                 except Exception as req_exc:
                     errors.append(f"html_requests_error: {type(req_exc).__name__}: {req_exc}")
                     methods_attempted.append("html_urllib")
-                    final_url, html, content_type = _fetch_html_urllib(url=url, timeout=timeout)
+                    final_url, html, content_type = _fetch_html_urllib(url=url, timeout=timeout, request_headers=request_headers)
                     methods_succeeded.append("html_urllib")
                     html_source = "urllib"
             else:
                 methods_attempted.append("html_urllib")
-                final_url, html, content_type = _fetch_html_urllib(url=url, timeout=timeout)
+                final_url, html, content_type = _fetch_html_urllib(url=url, timeout=timeout, request_headers=request_headers)
                 methods_succeeded.append("html_urllib")
                 html_source = "urllib"
         else:
             methods_attempted.append("html_urllib")
-            final_url, html, content_type = _fetch_html_urllib(url=url, timeout=timeout)
+            final_url, html, content_type = _fetch_html_urllib(url=url, timeout=timeout, request_headers=request_headers)
             methods_succeeded.append("html_urllib")
             html_source = "urllib"
 
@@ -367,7 +427,12 @@ def archive_url(
         "markdown_hash": markdown_hash,
         "content_hash_preferred": content_hash_preferred,
         "dedup": dedup,
+        "page_kind_hint": page_kind_hint,
+        "snapshot_role": snapshot_role or "default",
     }
+
+    if extra_meta:
+        meta["extra"] = extra_meta
 
     meta_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -390,6 +455,8 @@ def archive_url(
             "content_hash_preferred": content_hash_preferred,
             "is_duplicate_content": dedup.get("is_duplicate_content", False),
             "match_reason": dedup.get("match_reason", "none"),
+            "page_kind_hint": page_kind_hint,
+            "snapshot_role": snapshot_role or "default",
         }
         append_snapshot_index_entry(index_entry, index_file=index_file)
 
