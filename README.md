@@ -11,6 +11,8 @@ Proyecto Python incremental con baseline legacy preservado y una v2 orientada a 
 
 El scraper técnico sigue funcionando por CLI. La v2 reutiliza sus outputs para presentar resultados de forma más útil y mantenible.
 
+La demo cliente ya no depende semánticamente de un único caso provincial: la base geográfica vive en `config/geography/provinces.yaml` y deja preparada la evolución multi-provincia en España.
+
 ## Demo candidate
 
 Estado actual de demo:
@@ -232,7 +234,7 @@ La vista principal está en español y se centra en negocio:
   - `Fotocasa`
   - `Idealista`
   - `Milanuncios`
-  - `Pisos`
+  - `Pisos.com`
   - `Yaencontre`
 - vista `Histórico`
 - pestaña `Técnico` con rutas y JSONs de apoyo
@@ -325,6 +327,7 @@ python -m unittest discover -s tests -p "test_*.py" -v
 - `milanuncios` depende todavía del parser genérico para detalle; parte del volumen llega a parse parcial y no a parse `ok`.
 - `harvest-listings` persiste una vista diaria simple en `data/harvest/YYYY-MM-DD/`; si se reejecuta varias veces el mismo día, actualiza esos ficheros.
 - La representación por portal en la interfaz ya existe para 5 portales, aunque algunos puedan no aportar datos en una ejecución concreta.
+- La base geográfica para UI y configuración multi-provincia está preparada en `config/geography/provinces.yaml`; el scraping real sigue creciendo por fases según cobertura de cada portal.
 - No hay panel multiusuario, autenticación ni CRM.
 - No hay crawling profundo ni anti-bot avanzado en esta fase.
 - La calidad final sigue siendo mejor en algunos portales que en otros.

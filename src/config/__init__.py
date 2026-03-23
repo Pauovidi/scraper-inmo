@@ -1,4 +1,5 @@
 from src.config.loader import (
+    load_province_catalog,
     load_job_by_name,
     load_jobs,
     load_source_by_domain,
@@ -11,6 +12,7 @@ from src.config.loader import (
 
 __all__ = [
     "load_sources",
+    "load_province_catalog",
     "load_source_by_domain",
     "load_jobs",
     "load_job_by_name",

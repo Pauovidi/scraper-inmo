@@ -18,7 +18,7 @@ PORTAL_LABELS = {
     "fotocasa": "Fotocasa",
     "idealista": "Idealista",
     "milanuncios": "Milanuncios",
-    "pisos": "Pisos",
+    "pisos": "Pisos.com",
     "yaencontre": "Yaencontre",
 }
 def portal_label(portal: str) -> str:

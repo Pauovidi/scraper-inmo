@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,10 @@ def sources_dir() -> Path:
 
 def jobs_dir() -> Path:
     return _config_root() / "jobs"
+
+
+def geography_dir() -> Path:
+    return _config_root() / "geography"
 
 
 def _load_yaml_file(path: Path) -> dict[str, Any]:
@@ -110,6 +115,43 @@ def _validate_job(data: dict[str, Any], path: Path) -> None:
 
     if not isinstance(data["sources"], list) or not data["sources"]:
         raise ValueError(f"sources must be a non-empty list in {path.name}")
+
+    if "target_provinces" in data:
+        target_provinces = data["target_provinces"]
+        if not isinstance(target_provinces, list) or any(not isinstance(item, str) or not item.strip() for item in target_provinces):
+            raise ValueError(f"target_provinces must be a list of non-empty strings in {path.name}")
+
+    if "geography_catalog" in data and not isinstance(data["geography_catalog"], str):
+        raise ValueError(f"geography_catalog must be a string in {path.name}")
+
+
+@lru_cache(maxsize=1)
+def load_province_catalog() -> dict[str, Any]:
+    path = geography_dir() / "provinces.yaml"
+    data = _load_yaml_file(path)
+
+    provinces = data.get("provinces", [])
+    if not isinstance(provinces, list) or not provinces or any(not isinstance(item, str) or not item.strip() for item in provinces):
+        raise ValueError("config/geography/provinces.yaml must define a non-empty list of province names")
+
+    aliases = data.get("aliases", {})
+    if not isinstance(aliases, dict):
+        raise ValueError("config/geography/provinces.yaml aliases must be a mapping")
+
+    city_to_province = data.get("city_to_province", {})
+    if not isinstance(city_to_province, dict):
+        raise ValueError("config/geography/provinces.yaml city_to_province must be a mapping")
+
+    demo_target_provinces = data.get("demo_target_provinces", [])
+    if not isinstance(demo_target_provinces, list):
+        raise ValueError("config/geography/provinces.yaml demo_target_provinces must be a list")
+
+    return {
+        "provinces": provinces,
+        "aliases": aliases,
+        "city_to_province": city_to_province,
+        "demo_target_provinces": demo_target_provinces,
+    }
 
 
 def load_sources() -> list[dict[str, Any]]:

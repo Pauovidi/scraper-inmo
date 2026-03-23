@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.streamlit_app import _apply_history_filters
+from app.streamlit_app import _apply_history_filters, _format_visible_date, _format_visible_datetime, _tab_labels
 from src.publish.client_cleaning import infer_record_province, is_blocked_client_record, normalize_province_name
+from src.publish.dedupe import PORTAL_LABELS
 from src.publish.history import load_master_map
 from src.publish.runner import publish_records
 
@@ -84,6 +85,7 @@ class ClientPolishTests(unittest.TestCase):
             [
                 {"portal": "pisos", "workflow_status": "pending", "first_seen_date": "2026-03-22", "last_seen_date": "2026-03-22", "title": "Nave en Bilbao", "province": "Bizkaia"},
                 {"portal": "fotocasa", "workflow_status": "processed", "first_seen_date": "2026-03-22", "last_seen_date": "2026-03-22", "title": "Local en Valencia", "province": "Valencia"},
+                {"portal": "idealista", "workflow_status": "pending", "first_seen_date": "2026-03-22", "last_seen_date": "2026-03-22", "title": "Oficina en Madrid", "province": "Madrid"},
             ]
         )
 
@@ -93,11 +95,27 @@ class ClientPolishTests(unittest.TestCase):
             status_filter="Todos",
             date_filter="Todas",
             search_text="",
-            selected_provinces=["Bizkaia"],
+            selected_provinces=["Bizkaia", "Valencia"],
         )
 
-        self.assertEqual(len(filtered.index), 1)
-        self.assertEqual(filtered.iloc[0]["province"], "Bizkaia")
+        self.assertEqual(len(filtered.index), 2)
+        self.assertEqual(set(filtered["province"].tolist()), {"Bizkaia", "Valencia"})
+
+    def test_visible_dates_use_european_format(self) -> None:
+        self.assertEqual(_format_visible_date("2026-03-23"), "23-03-2026")
+        self.assertEqual(_format_visible_datetime("2026-03-23T06:24:02Z"), "23-03-2026 06:24")
+
+    def test_portal_labels_and_tabs_use_client_copy(self) -> None:
+        self.assertEqual(PORTAL_LABELS["pisos"], "Pisos.com")
+        self.assertIn("PISOS.COM", _tab_labels())
+        self.assertIn("HISTÓRICO", _tab_labels())
+
+    def test_main_view_avoids_internal_operational_copy(self) -> None:
+        source = Path("app/streamlit_app.py").read_text(encoding="utf-8")
+        self.assertIn("Guardar cambios de estado", source)
+        self.assertIn("Cómo cambiar el estado", source)
+        self.assertNotIn("Ejecución diaria", source)
+        self.assertNotIn("actualización diaria", source.lower())
 
     def test_main_view_does_not_expose_internal_bizkaia_job_names(self) -> None:
         source = Path("app/streamlit_app.py").read_text(encoding="utf-8").lower()

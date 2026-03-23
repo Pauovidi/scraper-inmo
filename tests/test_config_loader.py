@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from src.config.loader import load_jobs, load_sources, resolve_job_start_urls
+from src.config.loader import load_jobs, load_province_catalog, load_sources, resolve_job_start_urls
 
 
 class ConfigLoaderTests(unittest.TestCase):
@@ -31,9 +31,22 @@ class ConfigLoaderTests(unittest.TestCase):
         jobs = load_jobs()
         names = {job["job_name"] for job in jobs}
         self.assertIn("bizkaia_naves", names)
+        self.assertIn("inmoscraper_demo_spain", names)
 
         urls = resolve_job_start_urls("bizkaia_naves")
         self.assertGreaterEqual(len(urls), 1)
+
+        demo_job = next(job for job in jobs if job["job_name"] == "inmoscraper_demo_spain")
+        self.assertIn("Madrid", demo_job["target_provinces"])
+        self.assertEqual(demo_job["geography_catalog"], "provinces.yaml")
+
+    def test_load_province_catalog_from_config(self) -> None:
+        catalog = load_province_catalog()
+        self.assertEqual(len(catalog["provinces"]), 52)
+        self.assertIn("Bizkaia", catalog["provinces"])
+        self.assertIn("Madrid", catalog["demo_target_provinces"])
+        self.assertEqual(catalog["aliases"]["Bizkaia"], ["bizkaia", "vizcaya"])
+        self.assertEqual(catalog["city_to_province"]["Bilbao"], "Bizkaia")
 
     def test_validation_missing_required_field_raises(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

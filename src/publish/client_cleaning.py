@@ -4,60 +4,11 @@ import re
 import unicodedata
 from typing import Any, Mapping
 
-SPAIN_PROVINCES = [
-    "A Coruña",
-    "Álava",
-    "Albacete",
-    "Alicante",
-    "Almería",
-    "Asturias",
-    "Ávila",
-    "Badajoz",
-    "Barcelona",
-    "Bizkaia",
-    "Burgos",
-    "Cáceres",
-    "Cádiz",
-    "Cantabria",
-    "Castellón",
-    "Ceuta",
-    "Ciudad Real",
-    "Córdoba",
-    "Cuenca",
-    "Girona",
-    "Granada",
-    "Guadalajara",
-    "Gipuzkoa",
-    "Huelva",
-    "Huesca",
-    "Illes Balears",
-    "Jaén",
-    "La Rioja",
-    "Las Palmas",
-    "León",
-    "Lleida",
-    "Lugo",
-    "Madrid",
-    "Málaga",
-    "Melilla",
-    "Murcia",
-    "Navarra",
-    "Ourense",
-    "Palencia",
-    "Pontevedra",
-    "Salamanca",
-    "Santa Cruz de Tenerife",
-    "Segovia",
-    "Sevilla",
-    "Soria",
-    "Tarragona",
-    "Teruel",
-    "Toledo",
-    "Valencia",
-    "Valladolid",
-    "Zamora",
-    "Zaragoza",
-]
+from src.config import load_province_catalog
+
+PROVINCE_CATALOG = load_province_catalog()
+SPAIN_PROVINCES = list(PROVINCE_CATALOG["provinces"])
+DEMO_TARGET_PROVINCES = list(PROVINCE_CATALOG.get("demo_target_provinces", []))
 
 BLOCKED_TEXT_PATTERNS = [
     r"sentimos la interrupci",
@@ -73,51 +24,13 @@ BLOCKED_TEXT_PATTERNS = [
 ]
 
 PROVINCE_ALIASES: dict[str, tuple[str, ...]] = {
-    "A Coruña": ("a coruna", "la coruna"),
-    "Álava": ("alava", "araba"),
-    "Alicante": ("alicante", "alacant"),
-    "Asturias": ("asturias", "oviedo"),
-    "Bizkaia": ("bizkaia", "vizcaya"),
-    "Castellón": ("castellon", "castello"),
-    "Gipuzkoa": ("gipuzkoa", "guipuzcoa"),
-    "Illes Balears": ("illes balears", "islas baleares", "baleares"),
-    "La Rioja": ("la rioja", "rioja"),
-    "Navarra": ("navarra", "nafarroa"),
-    "Ourense": ("ourense", "orense"),
-    "Valencia": ("valencia", "valencia/valencia"),
+    province: tuple(str(alias) for alias in aliases)
+    for province, aliases in dict(PROVINCE_CATALOG.get("aliases", {})).items()
 }
 
 CITY_TO_PROVINCE: dict[str, str] = {
-    "abadiño": "Bizkaia",
-    "ajangiz": "Bizkaia",
-    "amorebieta": "Bizkaia",
-    "arrigorriaga": "Bizkaia",
-    "barakaldo": "Bizkaia",
-    "basauri": "Bizkaia",
-    "bilbao": "Bizkaia",
-    "derio": "Bizkaia",
-    "durango": "Bizkaia",
-    "elorrio": "Bizkaia",
-    "erandio": "Bizkaia",
-    "etxebarri": "Bizkaia",
-    "galdakao": "Bizkaia",
-    "gatika": "Bizkaia",
-    "gernika": "Bizkaia",
-    "guernica": "Bizkaia",
-    "igorre": "Bizkaia",
-    "iurreta": "Bizkaia",
-    "lezama": "Bizkaia",
-    "mungia": "Bizkaia",
-    "orozko": "Bizkaia",
-    "ortuella": "Bizkaia",
-    "portugalete": "Bizkaia",
-    "sestao": "Bizkaia",
-    "sondika": "Bizkaia",
-    "trapagaran": "Bizkaia",
-    "ugao": "Bizkaia",
-    "vizcaya": "Bizkaia",
-    "zamudio": "Bizkaia",
-    "zierbena": "Bizkaia",
+    str(city): str(province)
+    for city, province in dict(PROVINCE_CATALOG.get("city_to_province", {})).items()
 }
 
 
@@ -165,6 +78,10 @@ def infer_record_province(record: Mapping[str, Any]) -> str | None:
         record.get("title"),
         record.get("url_final"),
         record.get("canonical_url"),
+        record.get("breadcrumbs"),
+        record.get("breadcrumb_text"),
+        record.get("breadcrumbs_text"),
+        record.get("raw_text"),
     ]
     normalized_fragments = [_normalize_text(fragment) for fragment in fragments if fragment]
     combined = " ".join(fragment for fragment in normalized_fragments if fragment)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ STATUS_LABELS = {
     "discarded": "Descartado",
 }
 STATUS_BY_LABEL = {label: key for key, label in STATUS_LABELS.items()}
+VISIBLE_PORTAL_TABS = ["NUEVOS HOY"]
 
 
 def _read_json(path: Path | None) -> dict[str, Any] | None:
@@ -34,6 +36,37 @@ def _read_json(path: Path | None) -> dict[str, Any] | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def _parse_iso_date(value: object | None) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, float) and pd.isna(value):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _parse_iso_datetime(value: object | None) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, float) and pd.isna(value):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        parsed_date = _parse_iso_date(text)
+        if parsed_date is None:
+            return None
+        return datetime(parsed_date.year, parsed_date.month, parsed_date.day)
 
 
 def _empty_master_dataframe() -> pd.DataFrame:
@@ -153,6 +186,22 @@ def _format_text(value: object | None) -> str:
     return text if text else EMPTY_LABEL
 
 
+def _format_visible_date(value: object | None) -> str:
+    parsed = _parse_iso_date(value)
+    if parsed is not None:
+        return parsed.strftime("%d-%m-%Y")
+    return _format_text(value)
+
+
+def _format_visible_datetime(value: object | None) -> str:
+    parsed = _parse_iso_datetime(value)
+    if parsed is not None:
+        if parsed.hour == 0 and parsed.minute == 0 and parsed.second == 0:
+            return parsed.strftime("%d-%m-%Y")
+        return parsed.strftime("%d-%m-%Y %H:%M")
+    return _format_text(value)
+
+
 def _format_surface(value: object | None) -> str:
     if value in {"", None} or pd.isna(value):
         return EMPTY_LABEL
@@ -166,6 +215,70 @@ def _format_rooms(value: object | None) -> str:
         return str(int(float(value)))
     except Exception:
         return _format_text(value)
+
+
+def _tab_labels() -> list[str]:
+    portal_tabs = [PORTAL_LABELS[portal].upper() for portal in PORTAL_ORDER]
+    return VISIBLE_PORTAL_TABS + portal_tabs + ["HISTÓRICO", "TÉCNICO"]
+
+
+def _inject_client_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        div[data-baseweb="tab-list"] {
+            gap: 0.65rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+        button[data-baseweb="tab"] {
+            border: 1px solid rgba(15, 23, 42, 0.18);
+            border-radius: 999px;
+            padding: 0.72rem 1.1rem;
+            background: #f8fafc;
+            color: #0f172a;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        button[data-baseweb="tab"][aria-selected="true"] {
+            background: #0f172a;
+            color: #ffffff;
+            border-color: #0f172a;
+        }
+        div[data-testid="stMetric"] {
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 18px;
+            padding: 0.8rem 0.9rem;
+            background: #ffffff;
+        }
+        .status-guide {
+            border: 1px solid rgba(14, 116, 144, 0.15);
+            border-radius: 18px;
+            padding: 0.9rem 1rem;
+            background: linear-gradient(180deg, rgba(240, 249, 255, 1) 0%, rgba(248, 250, 252, 1) 100%);
+            margin-bottom: 0.8rem;
+        }
+        .status-guide strong {
+            display: block;
+            margin-bottom: 0.2rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_status_guidance() -> None:
+    st.markdown(
+        """
+        <div class="status-guide">
+          <strong>Cómo cambiar el estado</strong>
+          Usa la columna <strong>ESTADO</strong> para marcar cada anuncio como <strong>Pendiente</strong>, <strong>Procesado</strong> o <strong>Descartado</strong>, y después pulsa <strong>Guardar cambios de estado</strong>.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _sort_client_dataframe(dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -197,8 +310,8 @@ def _prepare_view_dataframe(dataframe: pd.DataFrame, *, include_portal: bool = T
     working["Superficie"] = working["surface_sqm"].apply(_format_surface)
     working["Habitaciones"] = working["rooms_count"].apply(_format_rooms)
     working["Enlace"] = working["url_final"].apply(lambda value: value if value and str(value).strip() else "")
-    working["Primera detección"] = working["first_seen_date"].apply(_format_text)
-    working["Última detección"] = working["last_seen_date"].apply(_format_text)
+    working["Primera detección"] = working["first_seen_date"].apply(_format_visible_date)
+    working["Última detección"] = working["last_seen_date"].apply(_format_visible_date)
     working["Veces visto"] = working["seen_count"].fillna(0).astype(int)
 
     columns = [
@@ -225,6 +338,7 @@ def _render_status_editor(dataframe: pd.DataFrame, *, key_prefix: str, include_p
         st.info("No hay anuncios para mostrar con los filtros actuales.")
         return
 
+    _render_status_guidance()
     view_df = _prepare_view_dataframe(dataframe, include_portal=include_portal)
     disabled_columns = [
         column
@@ -248,7 +362,7 @@ def _render_status_editor(dataframe: pd.DataFrame, *, key_prefix: str, include_p
         hide_index=True,
         key=f"editor_{key_prefix}",
         column_config={
-            "Estado": st.column_config.SelectboxColumn("Estado", options=list(STATUS_BY_LABEL.keys()), required=True, width="small"),
+            "Estado": st.column_config.SelectboxColumn("Estado", options=list(STATUS_BY_LABEL.keys()), required=True, width="medium"),
             "Portal": st.column_config.TextColumn("Portal", width="small"),
             "Título": st.column_config.TextColumn("Título", width="large"),
             "Precio": st.column_config.TextColumn("Precio", width="small"),
@@ -263,7 +377,7 @@ def _render_status_editor(dataframe: pd.DataFrame, *, key_prefix: str, include_p
         disabled=disabled_columns,
     )
 
-    if st.button("Guardar estados", key=f"save_{key_prefix}"):
+    if st.button("Guardar cambios de estado", key=f"save_{key_prefix}", type="primary"):
         changes = 0
         for listing_key in edited_df.index:
             original_status = str(view_df.loc[listing_key, "Estado"])
@@ -332,8 +446,7 @@ def _clear_provinces() -> None:
 
 def _visible_summary_payload(summary: dict[str, Any]) -> dict[str, Any]:
     return {
-        "publicado_el": summary.get("published_at"),
-        "ultima_ejecucion": summary.get("source_pipeline_run_id"),
+        "publicado_el": _format_visible_datetime(summary.get("published_at")),
         "nuevos_del_dia": summary.get("new_listings_count"),
         "historico_total": summary.get("history_total_count"),
         "rutas": {
@@ -346,20 +459,22 @@ def _visible_summary_payload(summary: dict[str, Any]) -> dict[str, Any]:
 
 def render() -> None:
     st.set_page_config(page_title=APP_NAME, layout="wide")
+    _inject_client_styles()
     st.title(APP_NAME)
-    st.caption("Panel cliente de oportunidades inmobiliarias")
+    st.caption("Panel cliente de oportunidades inmobiliarias en España")
 
     if st.button("Actualizar panel"):
         st.rerun()
 
     published_dates = list_published_dates()
     if not published_dates:
-        st.warning("Todavía no hay publicaciones diarias disponibles. Ejecuta la actualización diaria desde CLI.")
+        st.warning("Todavía no hay publicaciones listas para mostrar.")
         st.stop()
 
     with st.sidebar:
         st.header("Filtros")
-        selected_date = st.selectbox("Actualización", published_dates)
+        st.caption("Cobertura preparada para provincias de España")
+        selected_date = st.selectbox("Fecha de actualización", published_dates, format_func=_format_visible_date)
         province_controls = st.columns(2)
         province_controls[0].button("Todas", on_click=_select_all_provinces, use_container_width=True)
         province_controls[1].button("Limpiar", on_click=_clear_provinces, use_container_width=True)
@@ -382,21 +497,21 @@ def render() -> None:
     portal_counts = {portal: len(frame.index) for portal, frame in portal_frames.items()}
 
     metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
-    metric_col1.metric("Actualización", selected_date)
+    metric_col1.metric("Actualización", _format_visible_date(selected_date))
     metric_col2.metric("Nuevos hoy", len(today_all_df.index))
     metric_col3.metric("Histórico total", len(master_df.index))
     metric_col4.metric("Pendientes", total_pending)
 
-    st.caption(f"Última ejecución: {summary.get('published_at', EMPTY_LABEL)} | Origen de datos: actualización diaria")
+    st.caption(f"Última actualización visible: {_format_visible_datetime(summary.get('published_at'))}")
 
     portal_metric_cols = st.columns(len(PORTAL_ORDER))
     for idx, portal in enumerate(PORTAL_ORDER):
         portal_metric_cols[idx].metric(PORTAL_LABELS[portal], portal_counts.get(portal, 0))
 
-    tabs = st.tabs(["Nuevos del día"] + [PORTAL_LABELS[portal] for portal in PORTAL_ORDER] + ["Histórico", "Técnico"])
+    tabs = st.tabs(_tab_labels())
 
     with tabs[0]:
-        st.subheader("Nuevos del día")
+        st.subheader(f"Nuevos del día · {_format_visible_date(selected_date)}")
         visible_today = _filter_by_provinces(today_all_df, selected_provinces)
         st.caption(f"Mostrando {len(visible_today.index)} anuncio(s) visibles")
         _render_status_editor(visible_today, key_prefix=f"{selected_date}_all", include_portal=True)
@@ -410,6 +525,7 @@ def render() -> None:
 
     with tabs[len(PORTAL_ORDER) + 1]:
         st.subheader("Histórico")
+        st.caption(f"Fecha de referencia: {_format_visible_date(selected_date)}")
         if master_df.empty:
             st.info("No hay histórico disponible todavía.")
         else:
@@ -437,7 +553,11 @@ def render() -> None:
                 },
                 reverse=True,
             )
-            date_filter = filter_col3.selectbox("Fecha", ["Todas"] + known_dates)
+            date_filter = filter_col3.selectbox(
+                "Fecha",
+                ["Todas"] + known_dates,
+                format_func=lambda value: "Todas" if value == "Todas" else _format_visible_date(value),
+            )
             search_text = filter_col4.text_input("Búsqueda")
 
             filtered_history = _apply_history_filters(
@@ -453,7 +573,7 @@ def render() -> None:
 
     with tabs[len(PORTAL_ORDER) + 2]:
         st.subheader("Técnico")
-        st.caption("Información secundaria para soporte interno de la demo.")
+        st.caption("Información secundaria mínima para soporte de la demo.")
         st.text_input("Histórico maestro", value=str(history_dir() / "listings_master.jsonl"), disabled=True)
         st.text_input("Estados", value=str(history_dir() / "listing_status.jsonl"), disabled=True)
         st.text_input("Publicación diaria", value=str(_published_day_dir(selected_date) / "summary.json"), disabled=True)

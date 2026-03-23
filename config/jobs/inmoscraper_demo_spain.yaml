@@ -1,0 +1,24 @@
+{
+  "job_name": "inmoscraper_demo_spain",
+  "sources": [
+    "fotocasa.es",
+    "idealista.com",
+    "milanuncios.com",
+    "pisos.com",
+    "yaencontre.com"
+  ],
+  "filters": {
+    "property_type": "nave",
+    "market_scope": "spain"
+  },
+  "target_provinces": [
+    "Bizkaia",
+    "Madrid",
+    "Barcelona",
+    "Valencia",
+    "Sevilla"
+  ],
+  "geography_catalog": "provinces.yaml",
+  "max_urls": 25,
+  "notes": "Job de demo neutro preparado para trabajar con varias provincias objetivo de España sin exponer nombres internos al cliente."
+}
