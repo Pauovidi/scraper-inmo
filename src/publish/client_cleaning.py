@@ -60,7 +60,7 @@ SPAIN_PROVINCES = [
 ]
 
 BLOCKED_TEXT_PATTERNS = [
-    r"sentimos la interrupcion",
+    r"sentimos la interrupci",
     r"pardon our interruption",
     r"access denied",
     r"verify you are human",
@@ -200,4 +200,3 @@ def normalize_client_record(record: Mapping[str, Any]) -> dict[str, Any]:
     normalized = dict(record)
     normalized["province"] = infer_record_province(record)
     return normalized
-

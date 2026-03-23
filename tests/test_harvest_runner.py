@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -53,6 +54,7 @@ class HarvestRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             history_root = tmp_path / "history"
+            today_iso = date.today().isoformat()
             write_master_records(
                 [
                     {
@@ -69,11 +71,11 @@ class HarvestRunnerTests(unittest.TestCase):
                         "location_text": "Bilbao",
                         "surface_sqm": 120.0,
                         "rooms_count": 1,
-                        "first_seen_date": "2026-03-22",
-                        "last_seen_date": "2026-03-22",
+                        "first_seen_date": today_iso,
+                        "last_seen_date": today_iso,
                         "seen_count": 1,
                         "workflow_status": "pending",
-                        "workflow_updated_at": "2026-03-22T00:00:00Z",
+                        "workflow_updated_at": f"{today_iso}T00:00:00Z",
                         "workflow_note": None,
                         "parser_key": "idealista_listing",
                         "parse_status": "ok",

@@ -29,6 +29,7 @@ class ClientPolishTests(unittest.TestCase):
     def test_blocked_records_are_detected(self) -> None:
         self.assertTrue(is_blocked_client_record({"title": "Pardon our interruption"}))
         self.assertTrue(is_blocked_client_record({"title": "Sentimos la interrupción"}))
+        self.assertTrue(is_blocked_client_record({"title": "SENTIMOS LA INTERRUPCIĂ\x93N"}))
         self.assertFalse(is_blocked_client_record({"title": "Nave industrial en Bilbao"}))
 
     def test_publish_records_excludes_blocked_rows_and_persists_province(self) -> None:
