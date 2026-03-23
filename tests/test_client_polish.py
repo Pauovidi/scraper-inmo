@@ -113,7 +113,7 @@ class ClientPolishTests(unittest.TestCase):
     def test_main_view_avoids_internal_operational_copy(self) -> None:
         source = Path("app/streamlit_app.py").read_text(encoding="utf-8")
         self.assertIn("Guardar cambios de estado", source)
-        self.assertIn("Cómo cambiar el estado", source)
+        self.assertNotIn("Cómo cambiar el estado", source)
         self.assertNotIn("Ejecución diaria", source)
         self.assertNotIn("actualización diaria", source.lower())
 

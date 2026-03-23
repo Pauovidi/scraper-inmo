@@ -252,30 +252,7 @@ def _inject_client_styles() -> None:
             padding: 0.8rem 0.9rem;
             background: #ffffff;
         }
-        .status-guide {
-            border: 1px solid rgba(14, 116, 144, 0.15);
-            border-radius: 18px;
-            padding: 0.9rem 1rem;
-            background: linear-gradient(180deg, rgba(240, 249, 255, 1) 0%, rgba(248, 250, 252, 1) 100%);
-            margin-bottom: 0.8rem;
-        }
-        .status-guide strong {
-            display: block;
-            margin-bottom: 0.2rem;
-        }
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def _render_status_guidance() -> None:
-    st.markdown(
-        """
-        <div class="status-guide">
-          <strong>Cómo cambiar el estado</strong>
-          Usa la columna <strong>ESTADO</strong> para marcar cada anuncio como <strong>Pendiente</strong>, <strong>Procesado</strong> o <strong>Descartado</strong>, y después pulsa <strong>Guardar cambios de estado</strong>.
-        </div>
         """,
         unsafe_allow_html=True,
     )
@@ -338,7 +315,6 @@ def _render_status_editor(dataframe: pd.DataFrame, *, key_prefix: str, include_p
         st.info("No hay anuncios para mostrar con los filtros actuales.")
         return
 
-    _render_status_guidance()
     view_df = _prepare_view_dataframe(dataframe, include_portal=include_portal)
     disabled_columns = [
         column
