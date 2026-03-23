@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,6 +48,36 @@ class ConfigLoaderTests(unittest.TestCase):
         self.assertIn("Madrid", catalog["demo_target_provinces"])
         self.assertEqual(catalog["aliases"]["Bizkaia"], ["bizkaia", "vizcaya"])
         self.assertEqual(catalog["city_to_province"]["Bilbao"], "Bizkaia")
+
+    def test_load_province_catalog_honors_config_root_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            geography = tmp_path / "geography"
+            geography.mkdir(parents=True)
+            (geography / "provinces.yaml").write_text(
+                """
+provinces:
+  - Madrid
+aliases:
+  Madrid:
+    - madrid
+city_to_province:
+  Madrid: Madrid
+demo_target_provinces:
+  - Madrid
+""".strip(),
+                encoding="utf-8",
+            )
+
+            load_province_catalog.cache_clear()
+            try:
+                with patch.dict(os.environ, {"INMOSCRAPER_CONFIG_ROOT": str(tmp_path)}, clear=False):
+                    catalog = load_province_catalog()
+            finally:
+                load_province_catalog.cache_clear()
+
+            self.assertEqual(catalog["provinces"], ["Madrid"])
+            self.assertEqual(catalog["city_to_province"]["Madrid"], "Madrid")
 
     def test_validation_missing_required_field_raises(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

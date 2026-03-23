@@ -18,7 +18,7 @@ build/
 dist/
 build_demo/
 dist_demo/
-dist_demo_fixed/
+dist_demo*/
 *.egg-info/
 
 # Test and coverage

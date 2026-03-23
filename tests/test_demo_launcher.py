@@ -36,6 +36,10 @@ class DemoLauncherTests(unittest.TestCase):
         self.assertEqual(options["server.port"], 8501)
         self.assertFalse(options["global.developmentMode"])
 
+    def test_config_root_comes_from_resource_root(self) -> None:
+        with mock.patch.object(launcher, "_resource_root", return_value=Path("C:/bundle")):
+            self.assertEqual(launcher._config_root(), Path("C:/bundle/config"))
+
 
 if __name__ == "__main__":
     unittest.main()

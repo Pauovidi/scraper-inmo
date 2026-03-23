@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,9 @@ REQUIRED_JOB_FIELDS = {
 
 
 def _config_root() -> Path:
+    override = os.environ.get("INMOSCRAPER_CONFIG_ROOT")
+    if override:
+        return Path(override).resolve()
     return repo_root() / "config"
 
 

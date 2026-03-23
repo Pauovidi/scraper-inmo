@@ -31,6 +31,10 @@ def _runtime_root() -> Path:
     return _resource_root()
 
 
+def _config_root() -> Path:
+    return (_resource_root() / "config").resolve()
+
+
 def _app_path() -> Path:
     return _resource_root() / "app" / "streamlit_app.py"
 
@@ -133,6 +137,7 @@ def _serve_embedded_app(host: str, port: int) -> int:
         return 1
 
     os.environ.setdefault("INMOSCRAPER_RUNTIME_ROOT", str(_runtime_root()))
+    os.environ.setdefault("INMOSCRAPER_CONFIG_ROOT", str(_config_root()))
     flag_options = _streamlit_flag_options(host, port)
     load_config_options(flag_options)
     run(str(app_path), False, [], flag_options)
@@ -207,6 +212,7 @@ def main() -> int:
     command = _server_command(args.host, args.port)
     env = os.environ.copy()
     env["INMOSCRAPER_RUNTIME_ROOT"] = str(_runtime_root())
+    env["INMOSCRAPER_CONFIG_ROOT"] = str(_config_root())
 
     print("[INFO] Iniciando Inmoscraper...", flush=True)
     print(f"[INFO] URL esperada: {launch_url}", flush=True)
