@@ -1,9 +1,11 @@
-param()
+param(
+    [string]$DistRootName = "dist_demo"
+)
 
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$distRoot = Join-Path $repoRoot "dist_demo"
+$distRoot = Join-Path $repoRoot $DistRootName
 $buildRoot = Join-Path $repoRoot "build_demo"
 $packageRoot = Join-Path $distRoot "Inmoscraper"
 $specPath = Join-Path $PSScriptRoot "inmoscraper_demo.spec"
@@ -20,7 +22,22 @@ if ($pyInstaller.Trim() -ne "yes") {
 }
 
 if (Test-Path $packageRoot) {
-    Remove-Item $packageRoot -Recurse -Force
+    try {
+        Remove-Item $packageRoot -Recurse -Force
+    }
+    catch {
+        if ($DistRootName -eq "dist_demo") {
+            $distRoot = Join-Path $repoRoot "dist_demo_fixed"
+            $packageRoot = Join-Path $distRoot "Inmoscraper"
+            Write-Host "[WARN] dist_demo\\Inmoscraper estaba bloqueado. Se usará $packageRoot"
+            if (Test-Path $packageRoot) {
+                Remove-Item $packageRoot -Recurse -Force
+            }
+        }
+        else {
+            throw
+        }
+    }
 }
 
 python -m PyInstaller --noconfirm --clean --distpath $distRoot --workpath $buildRoot $specPath

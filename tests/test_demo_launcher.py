@@ -29,6 +29,13 @@ class DemoLauncherTests(unittest.TestCase):
         self.assertEqual(command[0], "C:\\demo\\Inmoscraper.exe")
         self.assertIn("--serve", command)
 
+    def test_streamlit_flag_options_disable_development_mode(self) -> None:
+        options = launcher._streamlit_flag_options("127.0.0.1", 8501)
+
+        self.assertEqual(options["server.address"], "127.0.0.1")
+        self.assertEqual(options["server.port"], 8501)
+        self.assertFalse(options["global.developmentMode"])
+
 
 if __name__ == "__main__":
     unittest.main()

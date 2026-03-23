@@ -97,6 +97,16 @@ def _python_command() -> list[str]:
     return [sys.executable or "python"]
 
 
+def _streamlit_flag_options(host: str, port: int) -> dict[str, object]:
+    return {
+        "server.headless": True,
+        "server.address": host,
+        "server.port": port,
+        "browser.gatherUsageStats": False,
+        "global.developmentMode": False,
+    }
+
+
 def _server_command(host: str, port: int) -> list[str]:
     if getattr(sys, "frozen", False):
         return [sys.executable, "--serve", "--host", host, "--port", str(port)]
@@ -115,7 +125,7 @@ def _server_command(host: str, port: int) -> list[str]:
 
 
 def _serve_embedded_app(host: str, port: int) -> int:
-    from streamlit.web.bootstrap import run
+    from streamlit.web.bootstrap import load_config_options, run
 
     app_path = _app_path()
     if not app_path.exists():
@@ -123,13 +133,8 @@ def _serve_embedded_app(host: str, port: int) -> int:
         return 1
 
     os.environ.setdefault("INMOSCRAPER_RUNTIME_ROOT", str(_runtime_root()))
-    flag_options = {
-        "server.headless": True,
-        "server.address": host,
-        "server.port": port,
-        "browser.gatherUsageStats": False,
-        "global.developmentMode": False,
-    }
+    flag_options = _streamlit_flag_options(host, port)
+    load_config_options(flag_options)
     run(str(app_path), False, [], flag_options)
     return 0
 
