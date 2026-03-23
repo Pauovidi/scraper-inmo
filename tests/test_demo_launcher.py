@@ -1,0 +1,34 @@
+from __future__ import annotations
+
+import importlib.util
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+
+MODULE_PATH = Path(__file__).resolve().parents[1] / "demo" / "launch_inmoscraper.py"
+SPEC = importlib.util.spec_from_file_location("demo_launch_inmoscraper", MODULE_PATH)
+assert SPEC and SPEC.loader
+launcher = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(launcher)
+
+
+class DemoLauncherTests(unittest.TestCase):
+    def test_runtime_root_uses_env_override(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch.dict(os.environ, {"INMOSCRAPER_RUNTIME_ROOT": temp_dir}, clear=False):
+                self.assertEqual(launcher._runtime_root(), Path(temp_dir).resolve())
+
+    def test_server_command_uses_current_executable_when_frozen(self) -> None:
+        with mock.patch.object(launcher.sys, "frozen", True, create=True):
+            with mock.patch.object(launcher.sys, "executable", "C:\\demo\\Inmoscraper.exe"):
+                command = launcher._server_command("127.0.0.1", 8501)
+
+        self.assertEqual(command[0], "C:\\demo\\Inmoscraper.exe")
+        self.assertIn("--serve", command)
+
+
+if __name__ == "__main__":
+    unittest.main()

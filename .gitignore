@@ -16,6 +16,8 @@ ENV/
 # Build and packaging
 build/
 dist/
+build_demo/
+dist_demo/
 *.egg-info/
 
 # Test and coverage

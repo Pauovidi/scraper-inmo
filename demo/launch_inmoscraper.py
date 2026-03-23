@@ -2,21 +2,37 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import subprocess
 import sys
 import time
+import threading
 import urllib.error
 import urllib.request
 import webbrowser
 from pathlib import Path
 
 
-def _repo_root() -> Path:
+def _resource_root() -> Path:
+    if getattr(sys, "frozen", False):
+        frozen_root = getattr(sys, "_MEIPASS", None)
+        if frozen_root:
+            return Path(str(frozen_root)).resolve()
+        return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parents[1]
 
 
+def _runtime_root() -> Path:
+    configured = os.environ.get("INMOSCRAPER_RUNTIME_ROOT")
+    if configured:
+        return Path(configured).resolve()
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return _resource_root()
+
+
 def _app_path() -> Path:
-    return _repo_root() / "app" / "streamlit_app.py"
+    return _resource_root() / "app" / "streamlit_app.py"
 
 
 def _health_url(host: str, port: int) -> str:
@@ -58,8 +74,82 @@ def _wait_for_health(url: str, process: subprocess.Popen[bytes], *, timeout_seco
     return False, last_error
 
 
+def _wait_for_health_url(url: str, *, timeout_seconds: int) -> tuple[bool, str]:
+    deadline = time.time() + timeout_seconds
+    last_error = "Tiempo de espera agotado"
+
+    while time.time() < deadline:
+        if _health_ok(url):
+            return True, ""
+
+        try:
+            with urllib.request.urlopen(url, timeout=2.0) as response:
+                last_error = f"Health endpoint respondió {response.status}"
+        except Exception as exc:  # pragma: no cover - solo diagnóstico interactivo
+            last_error = str(exc)
+
+        time.sleep(1)
+
+    return False, last_error
+
+
 def _python_command() -> list[str]:
     return [sys.executable or "python"]
+
+
+def _server_command(host: str, port: int) -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--serve", "--host", host, "--port", str(port)]
+    return _python_command() + [
+        "-m",
+        "streamlit",
+        "run",
+        str(_app_path()),
+        "--server.headless",
+        "true",
+        "--server.address",
+        host,
+        "--server.port",
+        str(port),
+    ]
+
+
+def _serve_embedded_app(host: str, port: int) -> int:
+    from streamlit.web.bootstrap import run
+
+    app_path = _app_path()
+    if not app_path.exists():
+        print(f"[ERROR] No se encuentra la app de Inmoscraper en: {app_path}", flush=True)
+        return 1
+
+    os.environ.setdefault("INMOSCRAPER_RUNTIME_ROOT", str(_runtime_root()))
+    flag_options = {
+        "server.headless": True,
+        "server.address": host,
+        "server.port": port,
+        "browser.gatherUsageStats": False,
+        "global.developmentMode": False,
+    }
+    run(str(app_path), False, [], flag_options)
+    return 0
+
+
+def _monitor_embedded_startup(*, health_url: str, launch_url: str, timeout_seconds: int, no_browser: bool) -> None:
+    ready, reason = _wait_for_health_url(health_url, timeout_seconds=timeout_seconds)
+    if not ready:
+        print(f"[ERROR] No se pudo iniciar Inmoscraper. {reason}", flush=True)
+        return
+
+    print(f"[OK] Inmoscraper está listo en {launch_url}", flush=True)
+    if no_browser:
+        print("[INFO] Navegador automático desactivado.", flush=True)
+        return
+
+    opened = webbrowser.open(launch_url, new=1)
+    if opened:
+        print("[INFO] Abriendo el navegador automáticamente...", flush=True)
+    else:
+        print(f"[INFO] No se pudo abrir el navegador automáticamente. Usa esta URL: {launch_url}", flush=True)
 
 
 def main() -> int:
@@ -68,7 +158,11 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8501)
     parser.add_argument("--timeout", type=int, default=45)
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--serve", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.serve:
+        return _serve_embedded_app(args.host, args.port)
 
     app_path = _app_path()
     if not app_path.exists():
@@ -88,22 +182,30 @@ def main() -> int:
             webbrowser.open(launch_url, new=1)
         return 0
 
-    command = _python_command() + [
-        "-m",
-        "streamlit",
-        "run",
-        str(app_path),
-        "--server.headless",
-        "true",
-        "--server.address",
-        args.host,
-        "--server.port",
-        str(args.port),
-    ]
+    if getattr(sys, "frozen", False):
+        print("[INFO] Iniciando Inmoscraper...", flush=True)
+        print(f"[INFO] URL esperada: {launch_url}", flush=True)
+        thread = threading.Thread(
+            target=_monitor_embedded_startup,
+            kwargs={
+                "health_url": health_url,
+                "launch_url": launch_url,
+                "timeout_seconds": args.timeout,
+                "no_browser": args.no_browser,
+            },
+            daemon=True,
+        )
+        thread.start()
+        print("[INFO] Cierra esta ventana para detener la demo.", flush=True)
+        return _serve_embedded_app(args.host, args.port)
+
+    command = _server_command(args.host, args.port)
+    env = os.environ.copy()
+    env["INMOSCRAPER_RUNTIME_ROOT"] = str(_runtime_root())
 
     print("[INFO] Iniciando Inmoscraper...", flush=True)
     print(f"[INFO] URL esperada: {launch_url}", flush=True)
-    process = subprocess.Popen(command, cwd=str(_repo_root()))
+    process = subprocess.Popen(command, cwd=str(_runtime_root()), env=env)
 
     ready, reason = _wait_for_health(health_url, process, timeout_seconds=args.timeout)
     if not ready:

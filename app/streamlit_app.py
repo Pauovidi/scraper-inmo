@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -9,7 +10,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(os.environ.get("INMOSCRAPER_RUNTIME_ROOT", Path(__file__).resolve().parents[1])).resolve()
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
